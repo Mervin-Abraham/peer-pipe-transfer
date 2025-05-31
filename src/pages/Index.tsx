@@ -1,11 +1,15 @@
 
 import { FileTransfer } from "@/components/FileTransfer";
 import { Toaster } from "@/components/ui/toaster";
+import { useSearchParams } from "react-router-dom";
 
 const Index = () => {
+  const [searchParams] = useSearchParams();
+  const connectToPeerId = searchParams.get('peer');
+
   return (
     <>
-      <FileTransfer />
+      <FileTransfer connectToPeerId={connectToPeerId} />
       <Toaster />
     </>
   );

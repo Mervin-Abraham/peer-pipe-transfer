@@ -1,57 +1,81 @@
 
-import React, { useState, useCallback } from 'react';
-import { Upload, Download, Share2, Copy, Check } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Share2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/components/ui/use-toast';
 import { usePeerConnection } from '@/hooks/usePeerConnection';
+import { FileSelector } from '@/components/FileSelector';
+import { FileReceiver } from '@/components/FileReceiver';
 
-export const FileTransfer = () => {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+interface FileTransferProps {
+  connectToPeerId?: string | null;
+}
+
+interface FileInfo {
+  name: string;
+  size: number;
+  id: string;
+}
+
+export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
   const [transferProgress, setTransferProgress] = useState(0);
   const [peerId, setPeerId] = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const [copiedToClipboard, setCopiedToClipboard] = useState(false);
+  const [availableFiles, setAvailableFiles] = useState<FileInfo[]>([]);
+  const [mode, setMode] = useState<'sender' | 'receiver'>('sender');
   const { toast } = useToast();
   
   const { 
     localPeerId, 
     connect, 
-    sendFile, 
+    setFilesForSharing,
+    requestFiles,
+    generateShareLink,
     isConnecting,
     connectionStatus 
   } = usePeerConnection({
-    onFileReceived: (file: File) => {
+    onFileReceived: (files: File[]) => {
       toast({
-        title: "File received!",
-        description: `${file.name} has been downloaded successfully.`,
+        title: "Files received!",
+        description: `${files.length} file(s) downloaded successfully.`,
       });
+      setTransferProgress(0);
     },
     onProgress: (progress: number) => {
       setTransferProgress(progress);
     },
     onConnectionChange: (connected: boolean) => {
       setIsConnected(connected);
+    },
+    onIncomingFiles: (fileList: FileInfo[]) => {
+      setAvailableFiles(fileList);
+      setMode('receiver');
     }
   });
 
-  const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      toast({
-        title: "File selected",
-        description: `${file.name} ready to transfer`,
+  // Auto-connect if peer ID is provided in URL
+  useEffect(() => {
+    if (connectToPeerId && !isConnected && !isConnecting) {
+      setPeerId(connectToPeerId);
+      setMode('receiver');
+      connect(connectToPeerId).catch((error) => {
+        toast({
+          title: "Auto-connection failed",
+          description: "Could not connect to the specified peer",
+          variant: "destructive",
+        });
       });
     }
-  }, [toast]);
+  }, [connectToPeerId, isConnected, isConnecting, connect, toast]);
 
   const handleConnect = useCallback(async () => {
     if (peerId.trim()) {
       try {
         await connect(peerId.trim());
+        setMode('receiver');
         toast({
           title: "Connected!",
           description: `Connected to peer ${peerId}`,
@@ -66,45 +90,22 @@ export const FileTransfer = () => {
     }
   }, [peerId, connect, toast]);
 
-  const handleSendFile = useCallback(async () => {
-    if (selectedFile && isConnected) {
-      try {
-        await sendFile(selectedFile);
-        toast({
-          title: "File sent!",
-          description: `${selectedFile.name} has been sent successfully.`,
-        });
-        setSelectedFile(null);
-        setTransferProgress(0);
-      } catch (error) {
-        toast({
-          title: "Transfer failed",
-          description: "Could not send the file",
-          variant: "destructive",
-        });
-      }
-    }
-  }, [selectedFile, isConnected, sendFile, toast]);
+  const handleFilesSelected = useCallback((files: File[]) => {
+    setFilesForSharing(files);
+    setMode('sender');
+  }, [setFilesForSharing]);
 
-  const copyPeerIdToClipboard = useCallback(async () => {
-    if (localPeerId) {
-      try {
-        await navigator.clipboard.writeText(localPeerId);
-        setCopiedToClipboard(true);
-        toast({
-          title: "Copied!",
-          description: "Your peer ID has been copied to clipboard",
-        });
-        setTimeout(() => setCopiedToClipboard(false), 2000);
-      } catch (error) {
-        toast({
-          title: "Copy failed",
-          description: "Could not copy peer ID to clipboard",
-          variant: "destructive",
-        });
-      }
+  const handleDownloadSelected = useCallback((fileIds: string[]) => {
+    try {
+      requestFiles(fileIds);
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: "Could not request files",
+        variant: "destructive",
+      });
     }
-  }, [localPeerId, toast]);
+  }, [requestFiles, toast]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -123,124 +124,99 @@ export const FileTransfer = () => {
                 Your Peer ID
               </CardTitle>
               <CardDescription>
-                Share this ID with others to receive files
+                Your unique identifier for this session
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="bg-gray-100 p-3 rounded-lg font-mono text-sm break-all">
                 {localPeerId || 'Generating...'}
               </div>
-              <Button 
-                onClick={copyPeerIdToClipboard}
-                disabled={!localPeerId}
-                className="w-full"
-                variant="outline"
-              >
-                {copiedToClipboard ? (
-                  <>
-                    <Check className="h-4 w-4 mr-2" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copy Peer ID
-                  </>
-                )}
-              </Button>
+              <div className="text-sm text-gray-600">
+                Connection Status: <span className="font-medium">{connectionStatus}</span>
+              </div>
             </CardContent>
           </Card>
 
           {/* Connect to Peer Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Download className="h-5 w-5" />
-                Connect to Peer
-              </CardTitle>
-              <CardDescription>
-                Enter a peer ID to connect and transfer files
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Input
-                placeholder="Enter peer ID"
-                value={peerId}
-                onChange={(e) => setPeerId(e.target.value)}
-                disabled={isConnecting || isConnected}
-              />
-              <Button 
-                onClick={handleConnect}
-                disabled={!peerId.trim() || isConnecting || isConnected}
-                className="w-full"
-              >
-                {isConnecting ? 'Connecting...' : isConnected ? 'Connected' : 'Connect'}
-              </Button>
-              {connectionStatus && (
-                <p className="text-sm text-gray-600 text-center">
-                  Status: {connectionStatus}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* File Transfer Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              File Transfer
-            </CardTitle>
-            <CardDescription>
-              Select a file to send to your connected peer
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-              <input
-                type="file"
-                onChange={handleFileSelect}
-                className="hidden"
-                id="file-input"
-                disabled={!isConnected}
-              />
-              <label 
-                htmlFor="file-input" 
-                className={`cursor-pointer ${!isConnected ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                <Upload className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <p className="text-lg font-medium text-gray-900">
-                  {selectedFile ? selectedFile.name : 'Choose a file to upload'}
-                </p>
-                <p className="text-sm text-gray-500">
-                  {isConnected ? 'Click to select a file' : 'Connect to a peer first'}
-                </p>
-              </label>
-            </div>
-
-            {selectedFile && (
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-medium">{selectedFile.name}</span>
-                  <span className="text-sm text-gray-500">
-                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                  </span>
-                </div>
-                {transferProgress > 0 && (
-                  <Progress value={transferProgress} className="mb-2" />
-                )}
+          {!connectToPeerId && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Connect to Peer</CardTitle>
+                <CardDescription>
+                  Enter a peer ID to connect and receive files
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Input
+                  placeholder="Enter peer ID"
+                  value={peerId}
+                  onChange={(e) => setPeerId(e.target.value)}
+                  disabled={isConnecting || isConnected}
+                />
                 <Button 
-                  onClick={handleSendFile}
-                  disabled={!isConnected || transferProgress > 0}
+                  onClick={handleConnect}
+                  disabled={!peerId.trim() || isConnecting || isConnected}
                   className="w-full"
                 >
-                  {transferProgress > 0 ? `Sending... ${transferProgress}%` : 'Send File'}
+                  {isConnecting ? 'Connecting...' : isConnected ? 'Connected' : 'Connect'}
                 </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {connectToPeerId && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Auto-Connecting</CardTitle>
+                <CardDescription>
+                  Connecting to peer: {connectToPeerId}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-4">
+                  {isConnecting ? (
+                    <p className="text-blue-600">Connecting...</p>
+                  ) : isConnected ? (
+                    <p className="text-green-600">Connected!</p>
+                  ) : (
+                    <p className="text-red-600">Connection failed</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Progress Bar */}
+        {transferProgress > 0 && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Transfer Progress</span>
+                  <span>{transferProgress}%</span>
+                </div>
+                <Progress value={transferProgress} />
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* File Operations */}
+        {mode === 'sender' && (
+          <FileSelector 
+            onFilesSelected={handleFilesSelected}
+            onGenerateLink={generateShareLink}
+          />
+        )}
+
+        {mode === 'receiver' && (
+          <FileReceiver 
+            availableFiles={availableFiles}
+            onDownloadSelected={handleDownloadSelected}
+            isConnected={isConnected}
+          />
+        )}
       </div>
     </div>
   );

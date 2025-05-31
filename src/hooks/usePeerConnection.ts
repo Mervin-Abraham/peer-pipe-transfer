@@ -2,9 +2,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface UsePeerConnectionProps {
-  onFileReceived: (file: File) => void;
+  onFileReceived: (files: File[]) => void;
   onProgress: (progress: number) => void;
   onConnectionChange: (connected: boolean) => void;
+  onIncomingFiles: (fileList: { name: string; size: number; id: string }[]) => void;
 }
 
 interface PeerConnection {
@@ -16,11 +17,13 @@ interface PeerConnection {
 export const usePeerConnection = ({
   onFileReceived,
   onProgress,
-  onConnectionChange
+  onConnectionChange,
+  onIncomingFiles
 }: UsePeerConnectionProps) => {
   const [localPeerId] = useState(() => Math.random().toString(36).substr(2, 9));
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const connectionRef = useRef<PeerConnection | null>(null);
   const fileTransferRef = useRef<{
     chunks: ArrayBuffer[];
@@ -28,6 +31,7 @@ export const usePeerConnection = ({
     fileSize: number;
     receivedSize: number;
   } | null>(null);
+  const pendingFilesRef = useRef<{ name: string; size: number; id: string; file: File }[]>([]);
 
   const createPeerConnection = useCallback(() => {
     const peer = new RTCPeerConnection({
@@ -40,11 +44,18 @@ export const usePeerConnection = ({
     peer.oniceconnectionstatechange = () => {
       console.log('ICE Connection State:', peer.iceConnectionState);
       setConnectionStatus(peer.iceConnectionState);
-      onConnectionChange(peer.iceConnectionState === 'connected' || peer.iceConnectionState === 'completed');
+      const isConnected = peer.iceConnectionState === 'connected' || peer.iceConnectionState === 'completed';
+      onConnectionChange(isConnected);
+      
+      if (isConnected && pendingFilesRef.current.length > 0) {
+        // Send file list when connection is established
+        const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
+        onIncomingFiles(fileList);
+      }
     };
 
     return peer;
-  }, [onConnectionChange]);
+  }, [onConnectionChange, onIncomingFiles]);
 
   const setupDataChannel = useCallback((channel: RTCDataChannel) => {
     channel.binaryType = 'arraybuffer';
@@ -52,6 +63,15 @@ export const usePeerConnection = ({
     channel.onopen = () => {
       console.log('Data channel opened');
       setConnectionStatus('Connected');
+      
+      // Send file list if we have files ready
+      if (pendingFilesRef.current.length > 0) {
+        const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
+        channel.send(JSON.stringify({
+          type: 'file-list',
+          files: fileList
+        }));
+      }
     };
 
     channel.onclose = () => {
@@ -64,7 +84,17 @@ export const usePeerConnection = ({
         try {
           const message = JSON.parse(event.data);
           
-          if (message.type === 'file-start') {
+          if (message.type === 'file-list') {
+            onIncomingFiles(message.files);
+          } else if (message.type === 'file-request') {
+            // Send requested files
+            const requestedFiles = pendingFilesRef.current.filter(f => 
+              message.fileIds.includes(f.id)
+            );
+            requestedFiles.forEach(fileData => {
+              sendSingleFile(fileData.file, fileData.id);
+            });
+          } else if (message.type === 'file-start') {
             console.log('Starting file transfer:', message.fileName);
             fileTransferRef.current = {
               chunks: [],
@@ -86,7 +116,7 @@ export const usePeerConnection = ({
               a.click();
               URL.revokeObjectURL(url);
               
-              onFileReceived(file);
+              onFileReceived([file]);
               fileTransferRef.current = null;
             }
           }
@@ -106,38 +136,9 @@ export const usePeerConnection = ({
     };
 
     return channel;
-  }, [onFileReceived, onProgress]);
+  }, [onFileReceived, onProgress, onIncomingFiles]);
 
-  const connect = useCallback(async (remotePeerId: string) => {
-    setIsConnecting(true);
-    
-    try {
-      const peer = createPeerConnection();
-      const dataChannel = peer.createDataChannel('fileTransfer');
-      setupDataChannel(dataChannel);
-      
-      connectionRef.current = {
-        peer,
-        dataChannel,
-        isInitiator: true
-      };
-
-      // For demonstration, we'll simulate a successful connection
-      // In a real implementation, you would use a signaling server
-      setTimeout(() => {
-        setIsConnecting(false);
-        setConnectionStatus('Connected');
-        onConnectionChange(true);
-      }, 2000);
-      
-    } catch (error) {
-      console.error('Connection failed:', error);
-      setIsConnecting(false);
-      throw error;
-    }
-  }, [createPeerConnection, setupDataChannel, onConnectionChange]);
-
-  const sendFile = useCallback(async (file: File) => {
+  const sendSingleFile = useCallback(async (file: File, fileId: string) => {
     if (!connectionRef.current?.dataChannel || connectionRef.current.dataChannel.readyState !== 'open') {
       throw new Error('No active connection');
     }
@@ -149,7 +150,8 @@ export const usePeerConnection = ({
     channel.send(JSON.stringify({
       type: 'file-start',
       fileName: file.name,
-      fileSize: file.size
+      fileSize: file.size,
+      fileId: fileId
     }));
 
     // Send file in chunks
@@ -167,11 +169,10 @@ export const usePeerConnection = ({
           onProgress(Math.round(progress));
           
           if (offset < file.size) {
-            setTimeout(sendChunk, 10); // Small delay to prevent overwhelming
+            setTimeout(sendChunk, 10);
           } else {
             // Send completion message
-            channel.send(JSON.stringify({ type: 'file-end' }));
-            onProgress(100);
+            channel.send(JSON.stringify({ type: 'file-end', fileId: fileId }));
           }
         }
       };
@@ -180,6 +181,70 @@ export const usePeerConnection = ({
 
     sendChunk();
   }, [onProgress]);
+
+  const connect = useCallback(async (remotePeerId: string) => {
+    setIsConnecting(true);
+    
+    try {
+      const peer = createPeerConnection();
+      const dataChannel = peer.createDataChannel('fileTransfer');
+      setupDataChannel(dataChannel);
+      
+      connectionRef.current = {
+        peer,
+        dataChannel,
+        isInitiator: true
+      };
+
+      // Simulate WebRTC connection for demo purposes
+      // In production, you would use a signaling server
+      setTimeout(() => {
+        setIsConnecting(false);
+        setConnectionStatus('Connected');
+        onConnectionChange(true);
+        
+        // If we have files ready, send the list
+        if (pendingFilesRef.current.length > 0) {
+          const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
+          dataChannel.send(JSON.stringify({
+            type: 'file-list',
+            files: fileList
+          }));
+        }
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Connection failed:', error);
+      setIsConnecting(false);
+      throw error;
+    }
+  }, [createPeerConnection, setupDataChannel, onConnectionChange]);
+
+  const setFilesForSharing = useCallback((files: File[]) => {
+    setSelectedFiles(files);
+    pendingFilesRef.current = files.map(file => ({
+      name: file.name,
+      size: file.size,
+      id: Math.random().toString(36).substr(2, 9),
+      file
+    }));
+  }, []);
+
+  const requestFiles = useCallback((fileIds: string[]) => {
+    if (!connectionRef.current?.dataChannel || connectionRef.current.dataChannel.readyState !== 'open') {
+      throw new Error('No active connection');
+    }
+
+    connectionRef.current.dataChannel.send(JSON.stringify({
+      type: 'file-request',
+      fileIds: fileIds
+    }));
+  }, []);
+
+  const generateShareLink = useCallback(() => {
+    const baseUrl = window.location.origin;
+    return `${baseUrl}?peer=${localPeerId}`;
+  }, [localPeerId]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -193,8 +258,11 @@ export const usePeerConnection = ({
   return {
     localPeerId,
     connect,
-    sendFile,
+    setFilesForSharing,
+    requestFiles,
+    generateShareLink,
     isConnecting,
-    connectionStatus
+    connectionStatus,
+    selectedFiles
   };
 };
