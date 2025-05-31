@@ -46,16 +46,10 @@ export const usePeerConnection = ({
       setConnectionStatus(peer.iceConnectionState);
       const isConnected = peer.iceConnectionState === 'connected' || peer.iceConnectionState === 'completed';
       onConnectionChange(isConnected);
-      
-      if (isConnected && pendingFilesRef.current.length > 0) {
-        // Send file list when connection is established
-        const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
-        onIncomingFiles(fileList);
-      }
     };
 
     return peer;
-  }, [onConnectionChange, onIncomingFiles]);
+  }, [onConnectionChange]);
 
   const setupDataChannel = useCallback((channel: RTCDataChannel) => {
     channel.binaryType = 'arraybuffer';
@@ -64,13 +58,16 @@ export const usePeerConnection = ({
       console.log('Data channel opened');
       setConnectionStatus('Connected');
       
-      // Send file list if we have files ready
+      // Send file list immediately when channel opens if we have files
       if (pendingFilesRef.current.length > 0) {
+        console.log('Sending file list:', pendingFilesRef.current.length, 'files');
         const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
-        channel.send(JSON.stringify({
-          type: 'file-list',
-          files: fileList
-        }));
+        setTimeout(() => {
+          channel.send(JSON.stringify({
+            type: 'file-list',
+            files: fileList
+          }));
+        }, 100); // Small delay to ensure receiver is ready
       }
     };
 
@@ -83,10 +80,13 @@ export const usePeerConnection = ({
       if (typeof event.data === 'string') {
         try {
           const message = JSON.parse(event.data);
+          console.log('Received message:', message);
           
           if (message.type === 'file-list') {
+            console.log('Received file list:', message.files);
             onIncomingFiles(message.files);
           } else if (message.type === 'file-request') {
+            console.log('File request received for:', message.fileIds);
             // Send requested files
             const requestedFiles = pendingFilesRef.current.filter(f => 
               message.fileIds.includes(f.id)
@@ -203,14 +203,13 @@ export const usePeerConnection = ({
         setConnectionStatus('Connected');
         onConnectionChange(true);
         
-        // If we have files ready, send the list
-        if (pendingFilesRef.current.length > 0) {
-          const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
-          dataChannel.send(JSON.stringify({
-            type: 'file-list',
-            files: fileList
-          }));
-        }
+        // Trigger data channel open after connection is established
+        setTimeout(() => {
+          if (dataChannel.readyState === 'connecting') {
+            // Simulate channel opening
+            dataChannel.onopen?.(new Event('open'));
+          }
+        }, 500);
       }, 2000);
       
     } catch (error) {
@@ -228,6 +227,17 @@ export const usePeerConnection = ({
       id: Math.random().toString(36).substr(2, 9),
       file
     }));
+    
+    console.log('Files set for sharing:', pendingFilesRef.current.length);
+    
+    // If we're already connected, send the file list immediately
+    if (connectionRef.current?.dataChannel?.readyState === 'open') {
+      const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
+      connectionRef.current.dataChannel.send(JSON.stringify({
+        type: 'file-list',
+        files: fileList
+      }));
+    }
   }, []);
 
   const requestFiles = useCallback((fileIds: string[]) => {
@@ -235,6 +245,7 @@ export const usePeerConnection = ({
       throw new Error('No active connection');
     }
 
+    console.log('Requesting files:', fileIds);
     connectionRef.current.dataChannel.send(JSON.stringify({
       type: 'file-request',
       fileIds: fileIds
