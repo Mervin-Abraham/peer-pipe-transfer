@@ -63,11 +63,14 @@ export const usePeerConnection = ({
         console.log('Sending file list:', pendingFilesRef.current.length, 'files');
         const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
         setTimeout(() => {
-          channel.send(JSON.stringify({
-            type: 'file-list',
-            files: fileList
-          }));
-        }, 100); // Small delay to ensure receiver is ready
+          if (channel.readyState === 'open') {
+            console.log('Actually sending file list now:', fileList);
+            channel.send(JSON.stringify({
+              type: 'file-list',
+              files: fileList
+            }));
+          }
+        }, 100);
       }
     };
 
@@ -197,17 +200,24 @@ export const usePeerConnection = ({
       };
 
       // Simulate WebRTC connection for demo purposes
-      // In production, you would use a signaling server
       setTimeout(() => {
+        console.log('Simulating connection established');
         setIsConnecting(false);
         setConnectionStatus('Connected');
         onConnectionChange(true);
         
-        // Trigger data channel open after connection is established
+        // Simulate the data channel opening with proper state
         setTimeout(() => {
-          if (dataChannel.readyState === 'connecting') {
-            // Simulate channel opening
-            dataChannel.onopen?.(new Event('open'));
+          console.log('Simulating data channel opening');
+          // Mock the channel state as open
+          Object.defineProperty(dataChannel, 'readyState', {
+            value: 'open',
+            writable: false
+          });
+          
+          // Trigger the onopen event
+          if (dataChannel.onopen) {
+            dataChannel.onopen(new Event('open'));
           }
         }, 500);
       }, 2000);
@@ -233,6 +243,7 @@ export const usePeerConnection = ({
     // If we're already connected, send the file list immediately
     if (connectionRef.current?.dataChannel?.readyState === 'open') {
       const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
+      console.log('Sending file list immediately (already connected):', fileList);
       connectionRef.current.dataChannel.send(JSON.stringify({
         type: 'file-list',
         files: fileList
