@@ -24,6 +24,7 @@ export const usePeerConnection = ({
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isWaitingForConnection, setIsWaitingForConnection] = useState(false);
   const connectionRef = useRef<PeerConnection | null>(null);
   const fileTransferRef = useRef<{
     chunks: ArrayBuffer[];
@@ -57,6 +58,8 @@ export const usePeerConnection = ({
     channel.onopen = () => {
       console.log('Data channel opened');
       setConnectionStatus('Connected');
+      setIsConnecting(false);
+      setIsWaitingForConnection(false);
       
       // Send file list immediately when channel opens if we have files
       if (pendingFilesRef.current.length > 0) {
@@ -77,6 +80,8 @@ export const usePeerConnection = ({
     channel.onclose = () => {
       console.log('Data channel closed');
       setConnectionStatus('Disconnected');
+      setIsConnecting(false);
+      setIsWaitingForConnection(false);
     };
 
     channel.onmessage = (event) => {
@@ -185,7 +190,66 @@ export const usePeerConnection = ({
     sendChunk();
   }, [onProgress]);
 
+  // Sender: Wait for incoming connections
+  const waitForConnection = useCallback(async () => {
+    console.log('Sender waiting for incoming connections...');
+    setIsWaitingForConnection(true);
+    setConnectionStatus('Waiting for connection');
+    
+    try {
+      const peer = createPeerConnection();
+      
+      // Set up to receive data channel from remote peer
+      peer.ondatachannel = (event) => {
+        console.log('Received data channel from remote peer');
+        const channel = event.channel;
+        setupDataChannel(channel);
+        
+        connectionRef.current = {
+          peer,
+          dataChannel: channel,
+          isInitiator: false
+        };
+      };
+
+      // Simulate waiting for connection (in production, this would use signaling)
+      setTimeout(() => {
+        console.log('Simulating incoming connection from receiver');
+        
+        // Create a mock data channel to simulate receiver connecting
+        const mockChannel = peer.createDataChannel('fileTransfer');
+        setupDataChannel(mockChannel);
+        
+        connectionRef.current = {
+          peer,
+          dataChannel: mockChannel,
+          isInitiator: false
+        };
+
+        // Simulate the connection being established
+        setTimeout(() => {
+          console.log('Simulating data channel opening');
+          Object.defineProperty(mockChannel, 'readyState', {
+            value: 'open',
+            writable: false
+          });
+          
+          if (mockChannel.onopen) {
+            mockChannel.onopen(new Event('open'));
+          }
+        }, 500);
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Failed to wait for connection:', error);
+      setIsWaitingForConnection(false);
+      throw error;
+    }
+  }, [createPeerConnection, setupDataChannel]);
+
+  // Receiver: Initiate connection to sender
   const connect = useCallback(async (remotePeerId: string) => {
+    console.log('Receiver connecting to sender:', remotePeerId);
     setIsConnecting(true);
     
     try {
@@ -202,20 +266,17 @@ export const usePeerConnection = ({
       // Simulate WebRTC connection for demo purposes
       setTimeout(() => {
         console.log('Simulating connection established');
-        setIsConnecting(false);
         setConnectionStatus('Connected');
         onConnectionChange(true);
         
         // Simulate the data channel opening with proper state
         setTimeout(() => {
           console.log('Simulating data channel opening');
-          // Mock the channel state as open
           Object.defineProperty(dataChannel, 'readyState', {
             value: 'open',
             writable: false
           });
           
-          // Trigger the onopen event
           if (dataChannel.onopen) {
             dataChannel.onopen(new Event('open'));
           }
@@ -240,6 +301,11 @@ export const usePeerConnection = ({
     
     console.log('Files set for sharing:', pendingFilesRef.current.length);
     
+    // Start waiting for connections when files are ready
+    if (!isWaitingForConnection && !connectionRef.current) {
+      waitForConnection();
+    }
+    
     // If we're already connected, send the file list immediately
     if (connectionRef.current?.dataChannel?.readyState === 'open') {
       const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
@@ -249,7 +315,7 @@ export const usePeerConnection = ({
         files: fileList
       }));
     }
-  }, []);
+  }, [isWaitingForConnection, waitForConnection]);
 
   const requestFiles = useCallback((fileIds: string[]) => {
     if (!connectionRef.current?.dataChannel || connectionRef.current.dataChannel.readyState !== 'open') {
@@ -284,7 +350,7 @@ export const usePeerConnection = ({
     requestFiles,
     generateShareLink,
     isConnecting,
-    connectionStatus,
+    connectionStatus: isWaitingForConnection ? 'Waiting for connection' : connectionStatus,
     selectedFiles
   };
 };

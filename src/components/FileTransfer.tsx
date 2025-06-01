@@ -25,7 +25,7 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
   const [peerId, setPeerId] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [availableFiles, setAvailableFiles] = useState<FileInfo[]>([]);
-  const [mode, setMode] = useState<'sender' | 'receiver'>('sender');
+  const [mode, setMode] = useState<'sender' | 'receiver' | 'initial'>('initial');
   const { toast } = useToast();
   
   const { 
@@ -51,17 +51,22 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
       setIsConnected(connected);
     },
     onIncomingFiles: (fileList: FileInfo[]) => {
+      console.log('FileTransfer: Received incoming files:', fileList);
       setAvailableFiles(fileList);
-      setMode('receiver');
+      if (mode === 'initial') {
+        setMode('receiver');
+      }
     }
   });
 
-  // Auto-connect if peer ID is provided in URL
+  // Auto-connect if peer ID is provided in URL (receiver mode)
   useEffect(() => {
-    if (connectToPeerId && !isConnected && !isConnecting) {
+    if (connectToPeerId && mode === 'initial') {
+      console.log('Auto-connecting to peer:', connectToPeerId);
       setPeerId(connectToPeerId);
       setMode('receiver');
       connect(connectToPeerId).catch((error) => {
+        console.error('Auto-connection failed:', error);
         toast({
           title: "Auto-connection failed",
           description: "Could not connect to the specified peer",
@@ -69,28 +74,31 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
         });
       });
     }
-  }, [connectToPeerId, isConnected, isConnecting, connect, toast]);
+  }, [connectToPeerId, mode, connect, toast]);
 
   const handleConnect = useCallback(async () => {
     if (peerId.trim()) {
       try {
-        await connect(peerId.trim());
         setMode('receiver');
+        await connect(peerId.trim());
         toast({
-          title: "Connected!",
-          description: `Connected to peer ${peerId}`,
+          title: "Connecting...",
+          description: `Connecting to peer ${peerId}`,
         });
       } catch (error) {
+        console.error('Connection failed:', error);
         toast({
           title: "Connection failed",
           description: "Could not connect to the specified peer ID",
           variant: "destructive",
         });
+        setMode('initial');
       }
     }
   }, [peerId, connect, toast]);
 
   const handleFilesSelected = useCallback((files: File[]) => {
+    console.log('Files selected for sharing:', files.length);
     setFilesForSharing(files);
     setMode('sender');
   }, [setFilesForSharing]);
@@ -106,6 +114,16 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
       });
     }
   }, [requestFiles, toast]);
+
+  // Show connection status
+  useEffect(() => {
+    if (isConnected && mode === 'receiver') {
+      toast({
+        title: "Connected!",
+        description: "Successfully connected to sender",
+      });
+    }
+  }, [isConnected, mode, toast]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -134,11 +152,21 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
               <div className="text-sm text-gray-600">
                 Connection Status: <span className="font-medium">{connectionStatus}</span>
               </div>
+              {mode === 'sender' && (
+                <div className="text-sm text-blue-600">
+                  Mode: Waiting for receiver to connect
+                </div>
+              )}
+              {mode === 'receiver' && (
+                <div className="text-sm text-green-600">
+                  Mode: Connected as receiver
+                </div>
+              )}
             </CardContent>
           </Card>
 
           {/* Connect to Peer Card */}
-          {!connectToPeerId && (
+          {!connectToPeerId && mode !== 'sender' && (
             <Card>
               <CardHeader>
                 <CardTitle>Connect to Peer</CardTitle>
@@ -185,6 +213,22 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
               </CardContent>
             </Card>
           )}
+
+          {mode === 'sender' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Sender Mode</CardTitle>
+                <CardDescription>
+                  Waiting for receiver to connect
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-4">
+                  <p className="text-blue-600">Share your link and wait for connection...</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Progress Bar */}
@@ -203,7 +247,7 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
         )}
 
         {/* File Operations */}
-        {mode === 'sender' && (
+        {(mode === 'sender' || mode === 'initial') && (
           <FileSelector 
             onFilesSelected={handleFilesSelected}
             onGenerateLink={generateShareLink}
