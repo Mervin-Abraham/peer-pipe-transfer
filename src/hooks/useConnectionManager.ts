@@ -31,9 +31,15 @@ export const useConnectionManager = ({
 
     peer.oniceconnectionstatechange = () => {
       console.log('ICE Connection State:', peer.iceConnectionState);
-      setConnectionStatus(peer.iceConnectionState);
-      const isConnected = peer.iceConnectionState === 'connected' || peer.iceConnectionState === 'completed';
-      onConnectionChange(isConnected);
+      if (peer.iceConnectionState === 'connected' || peer.iceConnectionState === 'completed') {
+        setConnectionStatus('Connected');
+        setIsConnecting(false);
+        setIsWaitingForConnection(false);
+        onConnectionChange(true);
+      } else if (peer.iceConnectionState === 'disconnected' || peer.iceConnectionState === 'failed') {
+        setConnectionStatus('Disconnected');
+        onConnectionChange(false);
+      }
     };
 
     return peer;
@@ -47,6 +53,7 @@ export const useConnectionManager = ({
       setConnectionStatus('Connected');
       setIsConnecting(false);
       setIsWaitingForConnection(false);
+      onConnectionChange(true);
       onDataChannelOpen(channel);
     };
 
@@ -55,6 +62,7 @@ export const useConnectionManager = ({
       setConnectionStatus('Disconnected');
       setIsConnecting(false);
       setIsWaitingForConnection(false);
+      onConnectionChange(false);
     };
 
     channel.onmessage = (event) => {
@@ -71,7 +79,7 @@ export const useConnectionManager = ({
     };
 
     return channel;
-  }, [onDataChannelOpen, onMessage, onFileChunk]);
+  }, [onDataChannelOpen, onMessage, onFileChunk, onConnectionChange]);
 
   const waitForConnection = useCallback(async () => {
     console.log('Sender waiting for incoming connections...');
@@ -80,7 +88,7 @@ export const useConnectionManager = ({
     
     try {
       const peer = createPeerConnection();
-      const mockChannel = new MockDataChannel();
+      const mockChannel = new MockDataChannel('sender');
       setupDataChannel(mockChannel);
       
       connectionRef.current = {
@@ -92,14 +100,19 @@ export const useConnectionManager = ({
       // Simulate connection establishment
       setTimeout(() => {
         console.log('Simulating connection established for sender');
+        // Update ICE connection state to trigger the event handler
+        Object.defineProperty(peer, 'iceConnectionState', {
+          value: 'connected',
+          writable: true
+        });
         peer.dispatchEvent(new Event('iceconnectionstatechange'));
         
         // Open the data channel
         setTimeout(() => {
           console.log('Opening sender data channel');
           mockChannel.simulateOpen();
-        }, 500);
-      }, 1000);
+        }, 100);
+      }, 500);
       
     } catch (error) {
       console.error('Failed to wait for connection:', error);
@@ -111,10 +124,11 @@ export const useConnectionManager = ({
   const connect = useCallback(async (remotePeerId: string) => {
     console.log('Receiver connecting to sender:', remotePeerId);
     setIsConnecting(true);
+    setConnectionStatus('Connecting');
     
     try {
       const peer = createPeerConnection();
-      const mockChannel = new MockDataChannel();
+      const mockChannel = new MockDataChannel('receiver');
       setupDataChannel(mockChannel);
       
       connectionRef.current = {
@@ -126,22 +140,27 @@ export const useConnectionManager = ({
       // Simulate WebRTC connection for demo purposes
       setTimeout(() => {
         console.log('Simulating connection established for receiver');
-        setConnectionStatus('Connected');
-        onConnectionChange(true);
+        // Update ICE connection state to trigger the event handler
+        Object.defineProperty(peer, 'iceConnectionState', {
+          value: 'connected',
+          writable: true
+        });
+        peer.dispatchEvent(new Event('iceconnectionstatechange'));
         
         // Open the data channel
         setTimeout(() => {
           console.log('Opening receiver data channel');
           mockChannel.simulateOpen();
-        }, 500);
-      }, 1500);
+        }, 100);
+      }, 1000);
       
     } catch (error) {
       console.error('Connection failed:', error);
       setIsConnecting(false);
+      setConnectionStatus('Disconnected');
       throw error;
     }
-  }, [createPeerConnection, setupDataChannel, onConnectionChange]);
+  }, [createPeerConnection, setupDataChannel]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -153,7 +172,7 @@ export const useConnectionManager = ({
   }, []);
 
   return {
-    connectionStatus: isWaitingForConnection ? 'Waiting for connection' : connectionStatus,
+    connectionStatus,
     isConnecting,
     isWaitingForConnection,
     connectionRef,
