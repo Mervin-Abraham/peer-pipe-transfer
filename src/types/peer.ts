@@ -27,10 +27,11 @@ export interface FileTransferState {
 }
 
 export interface MessageData {
-  type: 'file-list' | 'file-request' | 'file-start' | 'file-end';
+  type: 'file-list' | 'file-request' | 'file-start' | 'file-end' | 'peer-disconnected';
   files?: { name: string; size: number; id: string }[];
   fileIds?: string[];
   fileName?: string;
   fileSize?: number;
   fileId?: string;
+  peerId?: string;
 }

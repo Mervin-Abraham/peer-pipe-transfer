@@ -12,6 +12,14 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }:
   const fileTransferRef = useRef<FileTransferState | null>(null);
   const pendingFilesRef = useRef<FileData[]>([]);
 
+  const clearFileState = useCallback(() => {
+    console.log('Clearing file transfer state...');
+    fileTransferRef.current = null;
+    pendingFilesRef.current = [];
+    onIncomingFiles([]);
+    onProgress(0);
+  }, [onIncomingFiles, onProgress]);
+
   const handleMessage = useCallback((message: MessageData, channel: any) => {
     console.log('Received message:', message);
     
@@ -158,6 +166,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }:
     setFilesForSharing,
     sendFileList,
     requestFiles,
-    pendingFilesRef
+    pendingFilesRef,
+    clearFileState
   };
 };

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { usePeerConnection } from '@/hooks/usePeerConnection';
 import { FileSelector } from '@/components/FileSelector';
 import { FileReceiver } from '@/components/FileReceiver';
@@ -26,6 +26,7 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
   const [isConnected, setIsConnected] = useState(false);
   const [availableFiles, setAvailableFiles] = useState<FileInfo[]>([]);
   const [mode, setMode] = useState<'sender' | 'receiver' | 'initial'>('initial');
+  const [wasDisconnected, setWasDisconnected] = useState(false);
   const { toast } = useToast();
   
   const { 
@@ -48,7 +49,29 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
       setTransferProgress(progress);
     },
     onConnectionChange: (connected: boolean) => {
+      const wasConnected = isConnected;
       setIsConnected(connected);
+      
+      if (wasConnected && !connected) {
+        // Connection was lost
+        setWasDisconnected(true);
+        setAvailableFiles([]);
+        setTransferProgress(0);
+        
+        toast({
+          title: "Connection lost",
+          description: "The sender has disconnected",
+          variant: "destructive",
+        });
+        
+        // Reset to initial mode if we were a receiver
+        if (mode === 'receiver') {
+          setTimeout(() => {
+            setMode('initial');
+            setWasDisconnected(false);
+          }, 3000);
+        }
+      }
     },
     onIncomingFiles: (fileList: FileInfo[]) => {
       console.log('FileTransfer: Received incoming files:', fileList);
@@ -56,6 +79,7 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
       if (mode === 'initial') {
         setMode('receiver');
       }
+      setWasDisconnected(false);
     }
   });
 
@@ -80,6 +104,7 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
     if (peerId.trim()) {
       try {
         setMode('receiver');
+        setWasDisconnected(false);
         await connect(peerId.trim());
         toast({
           title: "Connecting...",
@@ -150,23 +175,32 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
                 {localPeerId || 'Generating...'}
               </div>
               <div className="text-sm text-gray-600">
-                Connection Status: <span className="font-medium">{connectionStatus}</span>
+                Connection Status: <span className={`font-medium ${
+                  connectionStatus === 'Connected' ? 'text-green-600' :
+                  connectionStatus === 'Disconnected' && wasDisconnected ? 'text-red-600' :
+                  'text-gray-600'
+                }`}>{connectionStatus}</span>
               </div>
               {mode === 'sender' && (
                 <div className="text-sm text-blue-600">
                   Mode: Waiting for receiver to connect
                 </div>
               )}
-              {mode === 'receiver' && (
+              {mode === 'receiver' && !wasDisconnected && (
                 <div className="text-sm text-green-600">
                   Mode: Connected as receiver
+                </div>
+              )}
+              {wasDisconnected && (
+                <div className="text-sm text-red-600">
+                  Sender disconnected. Returning to main screen...
                 </div>
               )}
             </CardContent>
           </Card>
 
           {/* Connect to Peer Card */}
-          {!connectToPeerId && mode !== 'sender' && (
+          {!connectToPeerId && mode !== 'sender' && !wasDisconnected && (
             <Card>
               <CardHeader>
                 <CardTitle>Connect to Peer</CardTitle>
@@ -192,7 +226,7 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
             </Card>
           )}
 
-          {connectToPeerId && (
+          {connectToPeerId && !wasDisconnected && (
             <Card>
               <CardHeader>
                 <CardTitle>Auto-Connecting</CardTitle>
@@ -229,6 +263,23 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
               </CardContent>
             </Card>
           )}
+
+          {wasDisconnected && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Connection Lost</CardTitle>
+                <CardDescription>
+                  The sender has disconnected
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-4">
+                  <p className="text-red-600">Connection was lost. Files are no longer available.</p>
+                  <p className="text-sm text-gray-500 mt-2">Returning to main screen automatically...</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Progress Bar */}
@@ -247,14 +298,14 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
         )}
 
         {/* File Operations */}
-        {(mode === 'sender' || mode === 'initial') && (
+        {(mode === 'sender' || mode === 'initial') && !wasDisconnected && (
           <FileSelector 
             onFilesSelected={handleFilesSelected}
             onGenerateLink={generateShareLink}
           />
         )}
 
-        {mode === 'receiver' && (
+        {mode === 'receiver' && !wasDisconnected && (
           <FileReceiver 
             availableFiles={availableFiles}
             onDownloadSelected={handleDownloadSelected}

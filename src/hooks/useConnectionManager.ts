@@ -8,18 +8,68 @@ interface UseConnectionManagerProps {
   onDataChannelOpen: (channel: any) => void;
   onMessage: (data: any, channel: any) => void;
   onFileChunk: (data: ArrayBuffer) => void;
+  onPeerDisconnected?: () => void;
 }
 
 export const useConnectionManager = ({ 
   onConnectionChange, 
   onDataChannelOpen,
   onMessage,
-  onFileChunk
+  onFileChunk,
+  onPeerDisconnected
 }: UseConnectionManagerProps) => {
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   const [isConnecting, setIsConnecting] = useState(false);
   const [isWaitingForConnection, setIsWaitingForConnection] = useState(false);
   const connectionRef = useRef<PeerConnection | null>(null);
+
+  // Cleanup function to handle disconnection
+  const handleDisconnection = useCallback(() => {
+    console.log('Handling disconnection...');
+    setConnectionStatus('Disconnected');
+    setIsConnecting(false);
+    setIsWaitingForConnection(false);
+    onConnectionChange(false);
+    
+    if (connectionRef.current?.dataChannel) {
+      connectionRef.current.dataChannel.close();
+    }
+    connectionRef.current = null;
+    
+    if (onPeerDisconnected) {
+      onPeerDisconnected();
+    }
+  }, [onConnectionChange, onPeerDisconnected]);
+
+  // Setup beforeunload event to handle tab close/reload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      console.log('Page unloading, sending disconnection signal...');
+      if (connectionRef.current?.dataChannel?.readyState === 'open') {
+        try {
+          connectionRef.current.dataChannel.send(JSON.stringify({
+            type: 'peer-disconnected',
+            peerId: 'sender'
+          }));
+        } catch (error) {
+          console.log('Failed to send disconnection message:', error);
+        }
+      }
+      
+      // Close connection
+      if (connectionRef.current?.dataChannel) {
+        connectionRef.current.dataChannel.close();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // Cleanup on component unmount
+      handleBeforeUnload();
+    };
+  }, []);
 
   const createPeerConnection = useCallback(() => {
     const peer = new RTCPeerConnection({
@@ -36,14 +86,14 @@ export const useConnectionManager = ({
         setIsConnecting(false);
         setIsWaitingForConnection(false);
         onConnectionChange(true);
-      } else if (peer.iceConnectionState === 'disconnected' || peer.iceConnectionState === 'failed') {
-        setConnectionStatus('Disconnected');
-        onConnectionChange(false);
+      } else if (peer.iceConnectionState === 'disconnected' || peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'closed') {
+        console.log('ICE connection lost, handling disconnection');
+        handleDisconnection();
       }
     };
 
     return peer;
-  }, [onConnectionChange]);
+  }, [onConnectionChange, handleDisconnection]);
 
   const setupDataChannel = useCallback((channel: MockDataChannel) => {
     channel.binaryType = 'arraybuffer';
@@ -59,16 +109,21 @@ export const useConnectionManager = ({
 
     channel.onclose = () => {
       console.log('Data channel closed');
-      setConnectionStatus('Disconnected');
-      setIsConnecting(false);
-      setIsWaitingForConnection(false);
-      onConnectionChange(false);
+      handleDisconnection();
     };
 
     channel.onmessage = (event) => {
       if (typeof event.data === 'string') {
         try {
           const message = JSON.parse(event.data);
+          
+          // Handle peer disconnection messages
+          if (message.type === 'peer-disconnected') {
+            console.log('Received peer disconnection message');
+            handleDisconnection();
+            return;
+          }
+          
           onMessage(message, channel);
         } catch (error) {
           console.error('Error parsing message:', error);
@@ -79,7 +134,7 @@ export const useConnectionManager = ({
     };
 
     return channel;
-  }, [onDataChannelOpen, onMessage, onFileChunk, onConnectionChange]);
+  }, [onDataChannelOpen, onMessage, onFileChunk, onConnectionChange, handleDisconnection]);
 
   const waitForConnection = useCallback(async () => {
     console.log('Sender waiting for incoming connections...');
@@ -177,6 +232,7 @@ export const useConnectionManager = ({
     isWaitingForConnection,
     connectionRef,
     waitForConnection,
-    connect
+    connect,
+    handleDisconnection
   };
 };

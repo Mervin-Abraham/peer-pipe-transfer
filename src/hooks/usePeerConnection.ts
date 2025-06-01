@@ -19,12 +19,18 @@ export const usePeerConnection = ({
     setFilesForSharing: setFilesForSharingInternal,
     sendFileList,
     requestFiles: requestFilesInternal,
-    pendingFilesRef
+    pendingFilesRef,
+    clearFileState
   } = useFileTransfer({
     onFileReceived,
     onProgress,
     onIncomingFiles
   });
+
+  const handlePeerDisconnected = useCallback(() => {
+    console.log('Peer disconnected, clearing file state...');
+    clearFileState();
+  }, [clearFileState]);
 
   const {
     connectionStatus,
@@ -32,7 +38,8 @@ export const usePeerConnection = ({
     isWaitingForConnection,
     connectionRef,
     waitForConnection,
-    connect
+    connect,
+    handleDisconnection
   } = useConnectionManager({
     onConnectionChange,
     onDataChannelOpen: (channel) => {
@@ -40,7 +47,8 @@ export const usePeerConnection = ({
       sendFileList(channel);
     },
     onMessage: handleMessage,
-    onFileChunk: handleFileChunk
+    onFileChunk: handleFileChunk,
+    onPeerDisconnected: handlePeerDisconnected
   });
 
   const setFilesForSharing = useCallback((files: File[]) => {
@@ -70,9 +78,14 @@ export const usePeerConnection = ({
     return `${baseUrl}?peer=${localPeerId}`;
   }, [localPeerId]);
 
+  const disconnect = useCallback(() => {
+    handleDisconnection();
+  }, [handleDisconnection]);
+
   return {
     localPeerId,
     connect,
+    disconnect,
     setFilesForSharing,
     requestFiles,
     generateShareLink,
