@@ -14,6 +14,43 @@ interface PeerConnection {
   isInitiator: boolean;
 }
 
+// Mock data channel class for better simulation
+class MockDataChannel extends EventTarget {
+  public readyState: 'connecting' | 'open' | 'closing' | 'closed' = 'connecting';
+  public binaryType: 'blob' | 'arraybuffer' = 'arraybuffer';
+  public onopen: ((event: Event) => void) | null = null;
+  public onclose: ((event: Event) => void) | null = null;
+  public onmessage: ((event: MessageEvent) => void) | null = null;
+
+  send(data: string | ArrayBuffer) {
+    if (this.readyState !== 'open') {
+      throw new Error('RTCDataChannel.readyState is not \'open\'');
+    }
+    console.log('MockDataChannel: Sending data', data);
+    // Simulate receiving the message on the other end
+    setTimeout(() => {
+      if (this.onmessage) {
+        this.onmessage(new MessageEvent('message', { data }));
+      }
+    }, 10);
+  }
+
+  close() {
+    this.readyState = 'closed';
+    if (this.onclose) {
+      this.onclose(new Event('close'));
+    }
+  }
+
+  simulateOpen() {
+    this.readyState = 'open';
+    console.log('MockDataChannel: Simulating open state');
+    if (this.onopen) {
+      this.onopen(new Event('open'));
+    }
+  }
+}
+
 export const usePeerConnection = ({
   onFileReceived,
   onProgress,
@@ -52,7 +89,7 @@ export const usePeerConnection = ({
     return peer;
   }, [onConnectionChange]);
 
-  const setupDataChannel = useCallback((channel: RTCDataChannel) => {
+  const setupDataChannel = useCallback((channel: MockDataChannel) => {
     channel.binaryType = 'arraybuffer';
     
     channel.onopen = () => {
@@ -63,17 +100,17 @@ export const usePeerConnection = ({
       
       // Send file list immediately when channel opens if we have files
       if (pendingFilesRef.current.length > 0) {
-        console.log('Sending file list:', pendingFilesRef.current.length, 'files');
+        console.log('Sending file list on channel open:', pendingFilesRef.current.length, 'files');
         const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
-        setTimeout(() => {
-          if (channel.readyState === 'open') {
-            console.log('Actually sending file list now:', fileList);
-            channel.send(JSON.stringify({
-              type: 'file-list',
-              files: fileList
-            }));
-          }
-        }, 100);
+        try {
+          channel.send(JSON.stringify({
+            type: 'file-list',
+            files: fileList
+          }));
+          console.log('File list sent successfully:', fileList);
+        } catch (error) {
+          console.error('Failed to send file list:', error);
+        }
       }
     };
 
@@ -198,47 +235,26 @@ export const usePeerConnection = ({
     
     try {
       const peer = createPeerConnection();
+      const mockChannel = new MockDataChannel();
+      const setupChannel = setupDataChannel(mockChannel);
       
-      // Set up to receive data channel from remote peer
-      peer.ondatachannel = (event) => {
-        console.log('Received data channel from remote peer');
-        const channel = event.channel;
-        setupDataChannel(channel);
-        
-        connectionRef.current = {
-          peer,
-          dataChannel: channel,
-          isInitiator: false
-        };
+      connectionRef.current = {
+        peer,
+        dataChannel: mockChannel as any,
+        isInitiator: false
       };
 
-      // Simulate waiting for connection (in production, this would use signaling)
+      // Simulate connection establishment
       setTimeout(() => {
-        console.log('Simulating incoming connection from receiver');
+        console.log('Simulating connection established for sender');
+        peer.dispatchEvent(new Event('iceconnectionstatechange'));
         
-        // Create a mock data channel to simulate receiver connecting
-        const mockChannel = peer.createDataChannel('fileTransfer');
-        setupDataChannel(mockChannel);
-        
-        connectionRef.current = {
-          peer,
-          dataChannel: mockChannel,
-          isInitiator: false
-        };
-
-        // Simulate the connection being established
+        // Open the data channel
         setTimeout(() => {
-          console.log('Simulating data channel opening');
-          Object.defineProperty(mockChannel, 'readyState', {
-            value: 'open',
-            writable: false
-          });
-          
-          if (mockChannel.onopen) {
-            mockChannel.onopen(new Event('open'));
-          }
+          console.log('Opening sender data channel');
+          mockChannel.simulateOpen();
         }, 500);
-      }, 2000);
+      }, 1000);
       
     } catch (error) {
       console.error('Failed to wait for connection:', error);
@@ -254,34 +270,27 @@ export const usePeerConnection = ({
     
     try {
       const peer = createPeerConnection();
-      const dataChannel = peer.createDataChannel('fileTransfer');
-      setupDataChannel(dataChannel);
+      const mockChannel = new MockDataChannel();
+      setupDataChannel(mockChannel);
       
       connectionRef.current = {
         peer,
-        dataChannel,
+        dataChannel: mockChannel as any,
         isInitiator: true
       };
 
       // Simulate WebRTC connection for demo purposes
       setTimeout(() => {
-        console.log('Simulating connection established');
+        console.log('Simulating connection established for receiver');
         setConnectionStatus('Connected');
         onConnectionChange(true);
         
-        // Simulate the data channel opening with proper state
+        // Open the data channel
         setTimeout(() => {
-          console.log('Simulating data channel opening');
-          Object.defineProperty(dataChannel, 'readyState', {
-            value: 'open',
-            writable: false
-          });
-          
-          if (dataChannel.onopen) {
-            dataChannel.onopen(new Event('open'));
-          }
+          console.log('Opening receiver data channel');
+          mockChannel.simulateOpen();
         }, 500);
-      }, 2000);
+      }, 1500);
       
     } catch (error) {
       console.error('Connection failed:', error);
@@ -310,10 +319,14 @@ export const usePeerConnection = ({
     if (connectionRef.current?.dataChannel?.readyState === 'open') {
       const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
       console.log('Sending file list immediately (already connected):', fileList);
-      connectionRef.current.dataChannel.send(JSON.stringify({
-        type: 'file-list',
-        files: fileList
-      }));
+      try {
+        (connectionRef.current.dataChannel as any).send(JSON.stringify({
+          type: 'file-list',
+          files: fileList
+        }));
+      } catch (error) {
+        console.error('Failed to send file list immediately:', error);
+      }
     }
   }, [isWaitingForConnection, waitForConnection]);
 
@@ -323,10 +336,15 @@ export const usePeerConnection = ({
     }
 
     console.log('Requesting files:', fileIds);
-    connectionRef.current.dataChannel.send(JSON.stringify({
-      type: 'file-request',
-      fileIds: fileIds
-    }));
+    try {
+      (connectionRef.current.dataChannel as any).send(JSON.stringify({
+        type: 'file-request',
+        fileIds: fileIds
+      }));
+    } catch (error) {
+      console.error('Failed to request files:', error);
+      throw error;
+    }
   }, []);
 
   const generateShareLink = useCallback(() => {
