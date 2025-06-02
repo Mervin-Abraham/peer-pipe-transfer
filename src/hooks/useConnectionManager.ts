@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { PeerConnection } from '@/types/peer';
 
@@ -8,6 +9,8 @@ interface UseConnectionManagerProps {
   onFileChunk: (data: ArrayBuffer) => void;
   onPeerDisconnected?: () => void;
 }
+
+const SIGNALING_SERVER_URL = 'ws://localhost:8080';
 
 export const useConnectionManager = ({ 
   onConnectionChange, 
@@ -20,6 +23,9 @@ export const useConnectionManager = ({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isWaitingForConnection, setIsWaitingForConnection] = useState(false);
   const connectionRef = useRef<PeerConnection | null>(null);
+  const signalingSocketRef = useRef<WebSocket | null>(null);
+  const roomIdRef = useRef<string | null>(null);
+  const roleRef = useRef<'sender' | 'receiver' | null>(null);
 
   // Cleanup function to handle disconnection
   const handleDisconnection = useCallback(() => {
@@ -36,6 +42,11 @@ export const useConnectionManager = ({
       connectionRef.current.peer.close();
     }
     connectionRef.current = null;
+    
+    if (signalingSocketRef.current) {
+      signalingSocketRef.current.close();
+      signalingSocketRef.current = null;
+    }
     
     if (onPeerDisconnected) {
       onPeerDisconnected();
@@ -57,12 +68,15 @@ export const useConnectionManager = ({
         }
       }
       
-      // Close connection
+      // Close connections
       if (connectionRef.current?.dataChannel) {
         connectionRef.current.dataChannel.close();
       }
       if (connectionRef.current?.peer) {
         connectionRef.current.peer.close();
+      }
+      if (signalingSocketRef.current) {
+        signalingSocketRef.current.close();
       }
     };
 
@@ -70,7 +84,6 @@ export const useConnectionManager = ({
     
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      // Cleanup on component unmount
       handleBeforeUnload();
     };
   }, []);
@@ -83,7 +96,7 @@ export const useConnectionManager = ({
       ]
     });
 
-    // Enhanced ICE connection state monitoring for silent disconnections
+    // ICE connection state monitoring
     peer.oniceconnectionstatechange = () => {
       const state = peer.iceConnectionState;
       console.log('ICE Connection State:', state);
@@ -110,7 +123,7 @@ export const useConnectionManager = ({
       }
     };
 
-    // Monitor connection state changes for additional robustness
+    // Monitor connection state changes
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState;
       console.log('Peer Connection State:', state);
@@ -118,6 +131,18 @@ export const useConnectionManager = ({
       if (state === 'failed' || state === 'closed' || state === 'disconnected') {
         console.log('Peer connection state indicates disconnection:', state);
         handleDisconnection();
+      }
+    };
+
+    // Handle ICE candidates
+    peer.onicecandidate = (event) => {
+      if (event.candidate && signalingSocketRef.current?.readyState === WebSocket.OPEN) {
+        console.log('Sending ICE candidate');
+        signalingSocketRef.current.send(JSON.stringify({
+          type: 'ice-candidate',
+          candidate: event.candidate,
+          roomId: roomIdRef.current
+        }));
       }
     };
 
@@ -136,14 +161,12 @@ export const useConnectionManager = ({
       onDataChannelOpen(channel);
     };
 
-    // Enhanced data channel close handler for silent disconnections
     channel.onclose = () => {
       console.log('Data channel closed by peer');
       setConnectionStatus('Sender closed the data channel');
       handleDisconnection();
     };
 
-    // Handle data channel errors
     channel.onerror = (error) => {
       console.error('Data channel error:', error);
       setConnectionStatus('Data channel error');
@@ -155,7 +178,6 @@ export const useConnectionManager = ({
         try {
           const message = JSON.parse(event.data);
           
-          // Handle peer disconnection messages
           if (message.type === 'peer-disconnected') {
             console.log('Received peer disconnection message');
             handleDisconnection();
@@ -174,6 +196,100 @@ export const useConnectionManager = ({
     return channel;
   }, [onDataChannelOpen, onMessage, onFileChunk, onConnectionChange, handleDisconnection]);
 
+  const setupSignalingSocket = useCallback((roomId: string, role: 'sender' | 'receiver') => {
+    console.log(`Setting up signaling socket for ${role} in room:`, roomId);
+    
+    const socket = new WebSocket(SIGNALING_SERVER_URL);
+    signalingSocketRef.current = socket;
+    roomIdRef.current = roomId;
+    roleRef.current = role;
+
+    socket.onopen = () => {
+      console.log('Signaling socket connected');
+      socket.send(JSON.stringify({
+        type: 'join-room',
+        roomId: roomId,
+        role: role
+      }));
+    };
+
+    socket.onmessage = async (event) => {
+      const message = JSON.parse(event.data);
+      console.log('Received signaling message:', message);
+
+      const peer = connectionRef.current?.peer;
+      if (!peer) return;
+
+      switch (message.type) {
+        case 'offer':
+          if (role === 'receiver') {
+            console.log('Receiver: Setting remote description from offer');
+            await peer.setRemoteDescription(message.offer);
+            
+            const answer = await peer.createAnswer();
+            await peer.setLocalDescription(answer);
+            
+            socket.send(JSON.stringify({
+              type: 'answer',
+              answer: answer,
+              roomId: roomId
+            }));
+            
+            console.log('Receiver: Sent answer');
+          }
+          break;
+
+        case 'answer':
+          if (role === 'sender') {
+            console.log('Sender: Setting remote description from answer');
+            await peer.setRemoteDescription(message.answer);
+          }
+          break;
+
+        case 'ice-candidate':
+          console.log('Adding ICE candidate');
+          await peer.addIceCandidate(message.candidate);
+          break;
+
+        case 'peer-joined':
+          if (role === 'sender' && message.peerRole === 'receiver') {
+            console.log('Receiver joined, sender creating offer');
+            const offer = await peer.createOffer();
+            await peer.setLocalDescription(offer);
+            
+            socket.send(JSON.stringify({
+              type: 'offer',
+              offer: offer,
+              roomId: roomId
+            }));
+            
+            console.log('Sender: Sent offer');
+          }
+          break;
+
+        case 'peer-left':
+          console.log('Peer left the room');
+          handleDisconnection();
+          break;
+      }
+    };
+
+    socket.onerror = (error) => {
+      console.error('Signaling socket error:', error);
+      setConnectionStatus('Signaling error');
+      handleDisconnection();
+    };
+
+    socket.onclose = () => {
+      console.log('Signaling socket closed');
+      if (connectionRef.current) {
+        handleDisconnection();
+      }
+    };
+
+    return socket;
+  }, [handleDisconnection]);
+
   const waitForConnection = useCallback(async () => {
     console.log('Sender waiting for incoming connections...');
     setIsWaitingForConnection(true);
@@ -182,7 +298,7 @@ export const useConnectionManager = ({
     try {
       const peer = createPeerConnection();
       
-      // Create data channel as the initiator
+      // Create data channel as the sender
       const dataChannel = peer.createDataChannel('fileTransfer', {
         ordered: true
       });
@@ -195,31 +311,16 @@ export const useConnectionManager = ({
         isInitiator: true
       };
 
-      // TODO: Replace with real signaling server
-      // For now, simulate connection establishment
-      setTimeout(() => {
-        console.log('Simulating connection established for sender');
-        // Simulate successful ICE connection
-        Object.defineProperty(peer, 'iceConnectionState', {
-          value: 'connected',
-          writable: true
-        });
-        peer.dispatchEvent(new Event('iceconnectionstatechange'));
-        
-        // Open the data channel
-        setTimeout(() => {
-          console.log('Simulating data channel open for sender');
-          const openEvent = new Event('open');
-          dataChannel.dispatchEvent(openEvent);
-        }, 100);
-      }, 500);
+      // Generate room ID for this session
+      const roomId = Math.random().toString(36).substr(2, 9);
+      setupSignalingSocket(roomId, 'sender');
       
     } catch (error) {
       console.error('Failed to wait for connection:', error);
       setIsWaitingForConnection(false);
       throw error;
     }
-  }, [createPeerConnection, setupDataChannel]);
+  }, [createPeerConnection, setupDataChannel, setupSignalingSocket]);
 
   const connect = useCallback(async (remotePeerId: string) => {
     console.log('Receiver connecting to sender:', remotePeerId);
@@ -242,58 +343,14 @@ export const useConnectionManager = ({
         };
       };
 
-      // TODO: Replace with real signaling server
-      // For now, simulate connection establishment
-      setTimeout(() => {
-        console.log('Simulating connection established for receiver');
-        // Simulate successful ICE connection
-        Object.defineProperty(peer, 'iceConnectionState', {
-          value: 'connected',
-          writable: true
-        });
-        peer.dispatchEvent(new Event('iceconnectionstatechange'));
-        
-        // Simulate receiving data channel
-        setTimeout(() => {
-          console.log('Simulating data channel received for receiver');
-          
-          // Create a more complete mock channel that satisfies RTCDataChannel interface
-          const mockChannel = {
-            binaryType: 'arraybuffer' as BinaryType,
-            readyState: 'open' as RTCDataChannelState,
-            bufferedAmount: 0,
-            bufferedAmountLowThreshold: 0,
-            id: 0,
-            label: 'fileTransfer',
-            maxPacketLifeTime: null,
-            maxRetransmits: null,
-            negotiated: false,
-            ordered: true,
-            protocol: '',
-            send: () => {},
-            close: () => {},
-            addEventListener: () => {},
-            removeEventListener: () => {},
-            dispatchEvent: () => true,
-            onopen: null,
-            onclose: null,
-            onerror: null,
-            onmessage: null,
-            onbufferedamountlow: null
-          } as unknown as RTCDataChannel;
-          
-          const event = new Event('datachannel') as any;
-          event.channel = mockChannel;
-          peer.dispatchEvent(event);
-          
-          // Open the data channel
-          setTimeout(() => {
-            console.log('Simulating data channel open for receiver');
-            const openEvent = new Event('open');
-            mockChannel.dispatchEvent(openEvent);
-          }, 100);
-        }, 200);
-      }, 1000);
+      connectionRef.current = {
+        peer,
+        dataChannel: null,
+        isInitiator: false
+      };
+
+      // Use the remotePeerId as the room ID
+      setupSignalingSocket(remotePeerId, 'receiver');
       
     } catch (error) {
       console.error('Connection failed:', error);
@@ -301,13 +358,16 @@ export const useConnectionManager = ({
       setConnectionStatus('Disconnected');
       throw error;
     }
-  }, [createPeerConnection, setupDataChannel]);
+  }, [createPeerConnection, setupDataChannel, setupSignalingSocket]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (connectionRef.current?.peer) {
         connectionRef.current.peer.close();
+      }
+      if (signalingSocketRef.current) {
+        signalingSocketRef.current.close();
       }
     };
   }, []);

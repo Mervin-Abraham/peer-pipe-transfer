@@ -12,6 +12,7 @@ export const usePeerConnection = ({
 }: UsePeerConnectionProps) => {
   const [localPeerId] = useState(() => Math.random().toString(36).substr(2, 9));
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [roomId, setRoomId] = useState<string | null>(null);
 
   const {
     handleMessage,
@@ -30,6 +31,7 @@ export const usePeerConnection = ({
   const handlePeerDisconnected = useCallback(() => {
     console.log('Peer disconnected, clearing file state...');
     clearFileState();
+    setRoomId(null);
   }, [clearFileState]);
 
   const {
@@ -57,7 +59,12 @@ export const usePeerConnection = ({
     
     // Start waiting for connections when files are ready
     if (!isWaitingForConnection && !connectionRef.current) {
-      waitForConnection();
+      waitForConnection().then(() => {
+        // Extract room ID from the connection process
+        // In a real implementation, this would come from the signaling
+        const generatedRoomId = Math.random().toString(36).substr(2, 9);
+        setRoomId(generatedRoomId);
+      });
     }
     
     // If we're already connected, send the file list immediately
@@ -75,11 +82,14 @@ export const usePeerConnection = ({
 
   const generateShareLink = useCallback(() => {
     const baseUrl = window.location.origin;
-    return `${baseUrl}?peer=${localPeerId}`;
-  }, [localPeerId]);
+    // Use the room ID for sharing instead of local peer ID
+    const shareId = roomId || localPeerId;
+    return `${baseUrl}?peer=${shareId}`;
+  }, [roomId, localPeerId]);
 
   const disconnect = useCallback(() => {
     handleDisconnection();
+    setRoomId(null);
   }, [handleDisconnection]);
 
   return {
