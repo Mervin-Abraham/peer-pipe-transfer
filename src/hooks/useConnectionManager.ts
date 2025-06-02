@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { PeerConnection } from '@/types/peer';
 
@@ -257,15 +256,31 @@ export const useConnectionManager = ({
         // Simulate receiving data channel
         setTimeout(() => {
           console.log('Simulating data channel received for receiver');
+          
+          // Create a more complete mock channel that satisfies RTCDataChannel interface
           const mockChannel = {
-            binaryType: 'arraybuffer',
-            readyState: 'open',
+            binaryType: 'arraybuffer' as BinaryType,
+            readyState: 'open' as RTCDataChannelState,
+            bufferedAmount: 0,
+            bufferedAmountLowThreshold: 0,
+            id: 0,
+            label: 'fileTransfer',
+            maxPacketLifeTime: null,
+            maxRetransmits: null,
+            negotiated: false,
+            ordered: true,
+            protocol: '',
             send: () => {},
             close: () => {},
             addEventListener: () => {},
             removeEventListener: () => {},
-            dispatchEvent: () => true
-          } as RTCDataChannel;
+            dispatchEvent: () => true,
+            onopen: null,
+            onclose: null,
+            onerror: null,
+            onmessage: null,
+            onbufferedamountlow: null
+          } as unknown as RTCDataChannel;
           
           const event = new Event('datachannel') as any;
           event.channel = mockChannel;
