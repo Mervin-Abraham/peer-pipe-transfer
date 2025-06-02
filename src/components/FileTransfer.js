@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { usePeerConnection } from '@/hooks/usePeerConnection.js';
 import { FileSelector } from '@/components/FileSelector';
-import { FileReceiver } from '@/components/FileReceiver.jsx';
+import { FileReceiver } from '@/components/FileReceiver.js';
 
 export const FileTransfer = ({ connectToPeerId }) => {
   const [transferProgress, setTransferProgress] = useState(0);
@@ -66,8 +66,8 @@ export const FileTransfer = ({ connectToPeerId }) => {
     onIncomingFiles: (fileList) => {
       console.log('FileTransfer: Received incoming files:', fileList);
       setAvailableFiles(fileList);
-      // Only set mode to receiver if we're not already a sender
-      if (mode === 'initial') {
+      // Only set mode to receiver if we're not already a sender and not in initial mode from URL
+      if (mode === 'initial' && !connectToPeerId) {
         setMode('receiver');
       }
       setWasDisconnected(false);
@@ -116,11 +116,11 @@ export const FileTransfer = ({ connectToPeerId }) => {
   const handleFilesSelected = useCallback((files) => {
     console.log('Files selected for sharing:', files.length);
     setFilesForSharing(files);
-    // Only set mode to sender if we're not already connected as receiver
-    if (mode === 'initial') {
+    // Set mode to sender when files are selected (regardless of current mode, unless we're a receiver from URL)
+    if (!connectToPeerId) {
       setMode('sender');
     }
-  }, [setFilesForSharing, mode]);
+  }, [setFilesForSharing, connectToPeerId]);
 
   const handleDownloadSelected = useCallback((fileIds) => {
     try {
