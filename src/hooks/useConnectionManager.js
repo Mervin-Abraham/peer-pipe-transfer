@@ -1,14 +1,5 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { PeerConnection } from '@/types/peer';
-
-interface UseConnectionManagerProps {
-  onConnectionChange: (connected: boolean) => void;
-  onDataChannelOpen: (channel: any) => void;
-  onMessage: (data: any, channel: any) => void;
-  onFileChunk: (data: ArrayBuffer) => void;
-  onPeerDisconnected?: () => void;
-}
 
 const SIGNALING_SERVER_URL = 'ws://localhost:8080';
 
@@ -18,14 +9,14 @@ export const useConnectionManager = ({
   onMessage,
   onFileChunk,
   onPeerDisconnected
-}: UseConnectionManagerProps) => {
+}) => {
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   const [isConnecting, setIsConnecting] = useState(false);
   const [isWaitingForConnection, setIsWaitingForConnection] = useState(false);
-  const connectionRef = useRef<PeerConnection | null>(null);
-  const signalingSocketRef = useRef<WebSocket | null>(null);
-  const roomIdRef = useRef<string | null>(null);
-  const roleRef = useRef<'sender' | 'receiver' | null>(null);
+  const connectionRef = useRef(null);
+  const signalingSocketRef = useRef(null);
+  const roomIdRef = useRef(null);
+  const roleRef = useRef(null);
 
   // Cleanup function to handle disconnection
   const handleDisconnection = useCallback(() => {
@@ -149,7 +140,7 @@ export const useConnectionManager = ({
     return peer;
   }, [onConnectionChange, handleDisconnection]);
 
-  const setupDataChannel = useCallback((channel: RTCDataChannel) => {
+  const setupDataChannel = useCallback((channel) => {
     channel.binaryType = 'arraybuffer';
     
     channel.onopen = () => {
@@ -196,7 +187,7 @@ export const useConnectionManager = ({
     return channel;
   }, [onDataChannelOpen, onMessage, onFileChunk, onConnectionChange, handleDisconnection]);
 
-  const setupSignalingSocket = useCallback((roomId: string, role: 'sender' | 'receiver') => {
+  const setupSignalingSocket = useCallback((roomId, role) => {
     console.log(`Setting up signaling socket for ${role} in room:`, roomId);
     
     const socket = new WebSocket(SIGNALING_SERVER_URL);
@@ -322,7 +313,7 @@ export const useConnectionManager = ({
     }
   }, [createPeerConnection, setupDataChannel, setupSignalingSocket]);
 
-  const connect = useCallback(async (remotePeerId: string) => {
+  const connect = useCallback(async (remotePeerId) => {
     console.log('Receiver connecting to sender:', remotePeerId);
     setIsConnecting(true);
     setConnectionStatus('Connecting');

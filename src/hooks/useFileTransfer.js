@@ -1,16 +1,9 @@
 
 import { useRef, useCallback } from 'react';
-import { FileTransferState, FileData, MessageData } from '@/types/peer';
 
-interface UseFileTransferProps {
-  onFileReceived: (files: File[]) => void;
-  onProgress: (progress: number) => void;
-  onIncomingFiles: (fileList: { name: string; size: number; id: string }[]) => void;
-}
-
-export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }: UseFileTransferProps) => {
-  const fileTransferRef = useRef<FileTransferState | null>(null);
-  const pendingFilesRef = useRef<FileData[]>([]);
+export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }) => {
+  const fileTransferRef = useRef(null);
+  const pendingFilesRef = useRef([]);
 
   const clearFileState = useCallback(() => {
     console.log('Clearing file transfer state...');
@@ -20,7 +13,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }:
     onProgress(0);
   }, [onIncomingFiles, onProgress]);
 
-  const handleMessage = useCallback((message: MessageData, channel: any) => {
+  const handleMessage = useCallback((message, channel) => {
     console.log('Received message:', message);
     
     if (message.type === 'file-list') {
@@ -63,7 +56,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }:
     }
   }, [onFileReceived, onIncomingFiles]);
 
-  const handleFileChunk = useCallback((data: ArrayBuffer) => {
+  const handleFileChunk = useCallback((data) => {
     if (fileTransferRef.current) {
       fileTransferRef.current.chunks.push(data);
       fileTransferRef.current.receivedSize += data.byteLength;
@@ -73,7 +66,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }:
     }
   }, [onProgress]);
 
-  const sendSingleFile = useCallback(async (file: File, fileId: string, channel: any) => {
+  const sendSingleFile = useCallback(async (file, fileId, channel) => {
     if (!channel || channel.readyState !== 'open') {
       throw new Error('No active connection');
     }
@@ -96,7 +89,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }:
       const slice = file.slice(offset, offset + chunkSize);
       reader.onload = (event) => {
         if (event.target?.result && channel.readyState === 'open') {
-          channel.send(event.target.result as ArrayBuffer);
+          channel.send(event.target.result);
           offset += chunkSize;
           
           const progress = Math.min((offset / file.size) * 100, 100);
@@ -116,7 +109,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }:
     sendChunk();
   }, [onProgress]);
 
-  const setFilesForSharing = useCallback((files: File[]) => {
+  const setFilesForSharing = useCallback((files) => {
     pendingFilesRef.current = files.map(file => ({
       name: file.name,
       size: file.size,
@@ -127,7 +120,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }:
     console.log('Files set for sharing:', pendingFilesRef.current.length);
   }, []);
 
-  const sendFileList = useCallback((channel: any) => {
+  const sendFileList = useCallback((channel) => {
     if (pendingFilesRef.current.length > 0 && channel?.readyState === 'open') {
       const fileList = pendingFilesRef.current.map(f => ({ name: f.name, size: f.size, id: f.id }));
       console.log('Sending file list:', fileList);
@@ -143,7 +136,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles }:
     }
   }, []);
 
-  const requestFiles = useCallback((fileIds: string[], channel: any) => {
+  const requestFiles = useCallback((fileIds, channel) => {
     if (!channel || channel.readyState !== 'open') {
       throw new Error('No active connection');
     }

@@ -6,23 +6,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Download } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
-interface FileInfo {
-  name: string;
-  size: number;
-  id: string;
-}
-
-interface FileReceiverProps {
-  availableFiles: FileInfo[];
-  onDownloadSelected: (fileIds: string[]) => void;
-  isConnected: boolean;
-}
-
-export const FileReceiver = ({ availableFiles, onDownloadSelected, isConnected }: FileReceiverProps) => {
-  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
+export const FileReceiver = ({ availableFiles, onDownloadSelected, isConnected }) => {
+  const [selectedFileIds, setSelectedFileIds] = useState([]);
   const { toast } = useToast();
 
-  const handleFileToggle = (fileId: string, checked: boolean) => {
+  const handleFileToggle = (fileId, checked) => {
     if (checked) {
       setSelectedFileIds(prev => [...prev, fileId]);
     } else {
@@ -30,7 +18,7 @@ export const FileReceiver = ({ availableFiles, onDownloadSelected, isConnected }
     }
   };
 
-  const handleSelectAll = (checked: boolean) => {
+  const handleSelectAll = (checked) => {
     if (checked) {
       setSelectedFileIds(availableFiles.map(f => f.id));
     } else {
@@ -123,7 +111,7 @@ export const FileReceiver = ({ availableFiles, onDownloadSelected, isConnected }
                 <Checkbox
                   id={file.id}
                   checked={selectedFileIds.includes(file.id)}
-                  onCheckedChange={(checked) => handleFileToggle(file.id, checked as boolean)}
+                  onCheckedChange={(checked) => handleFileToggle(file.id, checked)}
                 />
                 <label htmlFor={file.id} className="text-sm font-medium cursor-pointer">
                   {file.name}

@@ -6,26 +6,16 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { usePeerConnection } from '@/hooks/usePeerConnection';
+import { usePeerConnection } from '@/hooks/usePeerConnection.js';
 import { FileSelector } from '@/components/FileSelector';
-import { FileReceiver } from '@/components/FileReceiver';
+import { FileReceiver } from '@/components/FileReceiver.jsx';
 
-interface FileTransferProps {
-  connectToPeerId?: string | null;
-}
-
-interface FileInfo {
-  name: string;
-  size: number;
-  id: string;
-}
-
-export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
+export const FileTransfer = ({ connectToPeerId }) => {
   const [transferProgress, setTransferProgress] = useState(0);
   const [peerId, setPeerId] = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const [availableFiles, setAvailableFiles] = useState<FileInfo[]>([]);
-  const [mode, setMode] = useState<'sender' | 'receiver' | 'initial'>('initial');
+  const [availableFiles, setAvailableFiles] = useState([]);
+  const [mode, setMode] = useState('initial');
   const [wasDisconnected, setWasDisconnected] = useState(false);
   const { toast } = useToast();
   
@@ -38,17 +28,17 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
     isConnecting,
     connectionStatus 
   } = usePeerConnection({
-    onFileReceived: (files: File[]) => {
+    onFileReceived: (files) => {
       toast({
         title: "Files received!",
         description: `${files.length} file(s) downloaded successfully.`,
       });
       setTransferProgress(0);
     },
-    onProgress: (progress: number) => {
+    onProgress: (progress) => {
       setTransferProgress(progress);
     },
-    onConnectionChange: (connected: boolean) => {
+    onConnectionChange: (connected) => {
       const wasConnected = isConnected;
       setIsConnected(connected);
       
@@ -73,9 +63,10 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
         }
       }
     },
-    onIncomingFiles: (fileList: FileInfo[]) => {
+    onIncomingFiles: (fileList) => {
       console.log('FileTransfer: Received incoming files:', fileList);
       setAvailableFiles(fileList);
+      // Only set mode to receiver if we're not already a sender
       if (mode === 'initial') {
         setMode('receiver');
       }
@@ -122,13 +113,16 @@ export const FileTransfer = ({ connectToPeerId }: FileTransferProps) => {
     }
   }, [peerId, connect, toast]);
 
-  const handleFilesSelected = useCallback((files: File[]) => {
+  const handleFilesSelected = useCallback((files) => {
     console.log('Files selected for sharing:', files.length);
     setFilesForSharing(files);
-    setMode('sender');
-  }, [setFilesForSharing]);
+    // Only set mode to sender if we're not already connected as receiver
+    if (mode === 'initial') {
+      setMode('sender');
+    }
+  }, [setFilesForSharing, mode]);
 
-  const handleDownloadSelected = useCallback((fileIds: string[]) => {
+  const handleDownloadSelected = useCallback((fileIds) => {
     try {
       requestFiles(fileIds);
     } catch (error) {

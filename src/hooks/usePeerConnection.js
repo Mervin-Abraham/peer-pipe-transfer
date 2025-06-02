@@ -1,18 +1,17 @@
 
 import { useState, useCallback } from 'react';
-import { UsePeerConnectionProps } from '@/types/peer';
-import { useFileTransfer } from './useFileTransfer';
-import { useConnectionManager } from './useConnectionManager';
+import { useFileTransfer } from './useFileTransfer.js';
+import { useConnectionManager } from './useConnectionManager.js';
 
 export const usePeerConnection = ({
   onFileReceived,
   onProgress,
   onConnectionChange,
   onIncomingFiles
-}: UsePeerConnectionProps) => {
+}) => {
   const [localPeerId] = useState(() => Math.random().toString(36).substr(2, 9));
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [roomId, setRoomId] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [roomId, setRoomId] = useState(null);
 
   const {
     handleMessage,
@@ -53,7 +52,7 @@ export const usePeerConnection = ({
     onPeerDisconnected: handlePeerDisconnected
   });
 
-  const setFilesForSharing = useCallback((files: File[]) => {
+  const setFilesForSharing = useCallback((files) => {
     setSelectedFiles(files);
     setFilesForSharingInternal(files);
     
@@ -73,7 +72,7 @@ export const usePeerConnection = ({
     }
   }, [isWaitingForConnection, waitForConnection, connectionRef, setFilesForSharingInternal, sendFileList]);
 
-  const requestFiles = useCallback((fileIds: string[]) => {
+  const requestFiles = useCallback((fileIds) => {
     if (!connectionRef.current?.dataChannel) {
       throw new Error('No active connection');
     }
