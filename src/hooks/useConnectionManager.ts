@@ -1,7 +1,6 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { PeerConnection } from '@/types/peer';
-import { MockDataChannel } from '@/utils/mockDataChannel';
 
 interface UseConnectionManagerProps {
   onConnectionChange: (connected: boolean) => void;
@@ -34,6 +33,9 @@ export const useConnectionManager = ({
     if (connectionRef.current?.dataChannel) {
       connectionRef.current.dataChannel.close();
     }
+    if (connectionRef.current?.peer) {
+      connectionRef.current.peer.close();
+    }
     connectionRef.current = null;
     
     if (onPeerDisconnected) {
@@ -60,6 +62,9 @@ export const useConnectionManager = ({
       if (connectionRef.current?.dataChannel) {
         connectionRef.current.dataChannel.close();
       }
+      if (connectionRef.current?.peer) {
+        connectionRef.current.peer.close();
+      }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -79,15 +84,40 @@ export const useConnectionManager = ({
       ]
     });
 
+    // Enhanced ICE connection state monitoring for silent disconnections
     peer.oniceconnectionstatechange = () => {
-      console.log('ICE Connection State:', peer.iceConnectionState);
-      if (peer.iceConnectionState === 'connected' || peer.iceConnectionState === 'completed') {
+      const state = peer.iceConnectionState;
+      console.log('ICE Connection State:', state);
+      
+      if (state === 'connected' || state === 'completed') {
         setConnectionStatus('Connected');
         setIsConnecting(false);
         setIsWaitingForConnection(false);
         onConnectionChange(true);
-      } else if (peer.iceConnectionState === 'disconnected' || peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'closed') {
-        console.log('ICE connection lost, handling disconnection');
+      } else if (state === 'disconnected') {
+        console.log('ICE connection disconnected - network issue detected');
+        setConnectionStatus('Peer connection lost');
+        handleDisconnection();
+      } else if (state === 'failed') {
+        console.log('ICE connection failed - connection cannot be established');
+        setConnectionStatus('Connection failed');
+        handleDisconnection();
+      } else if (state === 'closed') {
+        console.log('ICE connection closed - peer disconnected');
+        setConnectionStatus('Peer disconnected');
+        handleDisconnection();
+      } else if (state === 'checking') {
+        setConnectionStatus('Connecting...');
+      }
+    };
+
+    // Monitor connection state changes for additional robustness
+    peer.onconnectionstatechange = () => {
+      const state = peer.connectionState;
+      console.log('Peer Connection State:', state);
+      
+      if (state === 'failed' || state === 'closed' || state === 'disconnected') {
+        console.log('Peer connection state indicates disconnection:', state);
         handleDisconnection();
       }
     };
@@ -95,7 +125,7 @@ export const useConnectionManager = ({
     return peer;
   }, [onConnectionChange, handleDisconnection]);
 
-  const setupDataChannel = useCallback((channel: MockDataChannel) => {
+  const setupDataChannel = useCallback((channel: RTCDataChannel) => {
     channel.binaryType = 'arraybuffer';
     
     channel.onopen = () => {
@@ -107,8 +137,17 @@ export const useConnectionManager = ({
       onDataChannelOpen(channel);
     };
 
+    // Enhanced data channel close handler for silent disconnections
     channel.onclose = () => {
-      console.log('Data channel closed');
+      console.log('Data channel closed by peer');
+      setConnectionStatus('Sender closed the data channel');
+      handleDisconnection();
+    };
+
+    // Handle data channel errors
+    channel.onerror = (error) => {
+      console.error('Data channel error:', error);
+      setConnectionStatus('Data channel error');
       handleDisconnection();
     };
 
@@ -143,19 +182,25 @@ export const useConnectionManager = ({
     
     try {
       const peer = createPeerConnection();
-      const mockChannel = new MockDataChannel('sender');
-      setupDataChannel(mockChannel);
+      
+      // Create data channel as the initiator
+      const dataChannel = peer.createDataChannel('fileTransfer', {
+        ordered: true
+      });
+      
+      setupDataChannel(dataChannel);
       
       connectionRef.current = {
         peer,
-        dataChannel: mockChannel as any,
-        isInitiator: false
+        dataChannel,
+        isInitiator: true
       };
 
-      // Simulate connection establishment
+      // TODO: Replace with real signaling server
+      // For now, simulate connection establishment
       setTimeout(() => {
         console.log('Simulating connection established for sender');
-        // Update ICE connection state to trigger the event handler
+        // Simulate successful ICE connection
         Object.defineProperty(peer, 'iceConnectionState', {
           value: 'connected',
           writable: true
@@ -164,8 +209,9 @@ export const useConnectionManager = ({
         
         // Open the data channel
         setTimeout(() => {
-          console.log('Opening sender data channel');
-          mockChannel.simulateOpen();
+          console.log('Simulating data channel open for sender');
+          const openEvent = new Event('open');
+          dataChannel.dispatchEvent(openEvent);
         }, 100);
       }, 500);
       
@@ -183,30 +229,55 @@ export const useConnectionManager = ({
     
     try {
       const peer = createPeerConnection();
-      const mockChannel = new MockDataChannel('receiver');
-      setupDataChannel(mockChannel);
       
-      connectionRef.current = {
-        peer,
-        dataChannel: mockChannel as any,
-        isInitiator: true
+      // Listen for incoming data channel
+      peer.ondatachannel = (event) => {
+        console.log('Received data channel from sender');
+        const channel = event.channel;
+        setupDataChannel(channel);
+        
+        connectionRef.current = {
+          peer,
+          dataChannel: channel,
+          isInitiator: false
+        };
       };
 
-      // Simulate WebRTC connection for demo purposes
+      // TODO: Replace with real signaling server
+      // For now, simulate connection establishment
       setTimeout(() => {
         console.log('Simulating connection established for receiver');
-        // Update ICE connection state to trigger the event handler
+        // Simulate successful ICE connection
         Object.defineProperty(peer, 'iceConnectionState', {
           value: 'connected',
           writable: true
         });
         peer.dispatchEvent(new Event('iceconnectionstatechange'));
         
-        // Open the data channel
+        // Simulate receiving data channel
         setTimeout(() => {
-          console.log('Opening receiver data channel');
-          mockChannel.simulateOpen();
-        }, 100);
+          console.log('Simulating data channel received for receiver');
+          const mockChannel = {
+            binaryType: 'arraybuffer',
+            readyState: 'open',
+            send: () => {},
+            close: () => {},
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            dispatchEvent: () => true
+          } as RTCDataChannel;
+          
+          const event = new Event('datachannel') as any;
+          event.channel = mockChannel;
+          peer.dispatchEvent(event);
+          
+          // Open the data channel
+          setTimeout(() => {
+            console.log('Simulating data channel open for receiver');
+            const openEvent = new Event('open');
+            mockChannel.dispatchEvent(openEvent);
+          }, 100);
+        }, 200);
       }, 1000);
       
     } catch (error) {
