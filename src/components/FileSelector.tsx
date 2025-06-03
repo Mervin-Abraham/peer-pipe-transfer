@@ -2,8 +2,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Upload, Share2, Copy, Check } from 'lucide-react';
+import { Upload, Share2, Copy, Check, File } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface FileSelectorProps {
@@ -15,10 +14,28 @@ export const FileSelector = ({ onFilesSelected, onGenerateLink }: FileSelectorPr
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [shareLink, setShareLink] = useState<string>('');
   const [copiedToClipboard, setCopiedToClipboard] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const { toast } = useToast();
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
+    setSelectedFiles(files);
+    onFilesSelected(files);
+  };
+
+  const handleDragOver = (event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    const files = Array.from(event.dataTransfer.files);
     setSelectedFiles(files);
     onFilesSelected(files);
   };
@@ -61,19 +78,38 @@ export const FileSelector = ({ onFilesSelected, onGenerateLink }: FileSelectorPr
     }
   };
 
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
   return (
-    <Card>
+    <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Upload className="h-5 w-5" />
+        <CardTitle className="flex items-center gap-2 text-gray-800">
+          <Upload className="h-5 w-5 text-blue-600" />
           Select Files to Share
         </CardTitle>
-        <CardDescription>
-          Choose files and generate a share link
+        <CardDescription className="text-gray-600">
+          Choose files and generate a share link for secure transfer
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+      <CardContent className="space-y-6">
+        <div 
+          className={`border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${
+            isDragOver 
+              ? 'border-blue-400 bg-blue-50' 
+              : selectedFiles.length > 0 
+                ? 'border-green-300 bg-green-50' 
+                : 'border-gray-300 bg-gray-50 hover:border-gray-400 hover:bg-gray-100'
+          }`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <input
             type="file"
             onChange={handleFileSelect}
@@ -82,53 +118,79 @@ export const FileSelector = ({ onFilesSelected, onGenerateLink }: FileSelectorPr
             multiple
           />
           <label htmlFor="file-input-selector" className="cursor-pointer">
-            <Upload className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-            <p className="text-lg font-medium text-gray-900">
-              {selectedFiles.length > 0 ? `${selectedFiles.length} file(s) selected` : 'Choose files to share'}
-            </p>
-            <p className="text-sm text-gray-500">
-              Click to select multiple files
+            <Upload className={`h-16 w-16 mx-auto mb-4 ${
+              selectedFiles.length > 0 ? 'text-green-500' : 'text-gray-400'
+            }`} />
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              {selectedFiles.length > 0 
+                ? `${selectedFiles.length} file(s) selected` 
+                : isDragOver 
+                  ? 'Drop files here' 
+                  : 'Choose files to share'
+              }
+            </h3>
+            <p className="text-gray-500">
+              {isDragOver 
+                ? 'Release to select files' 
+                : 'Click to browse or drag and drop files here'
+              }
             </p>
           </label>
         </div>
 
         {selectedFiles.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="font-medium">Selected Files:</h4>
-            {selectedFiles.map((file, index) => (
-              <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                <span className="text-sm">{file.name}</span>
-                <span className="text-xs text-gray-500">
-                  {(file.size / 1024 / 1024).toFixed(2)} MB
-                </span>
-              </div>
-            ))}
+          <div className="space-y-3">
+            <h4 className="font-semibold text-gray-800 flex items-center gap-2">
+              <File className="h-4 w-4" />
+              Selected Files:
+            </h4>
+            <div className="max-h-40 overflow-y-auto space-y-2">
+              {selectedFiles.map((file, index) => (
+                <div key={index} className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <File className="h-4 w-4 text-blue-600" />
+                    <span className="font-medium text-gray-800">{file.name}</span>
+                  </div>
+                  <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                    {formatFileSize(file.size)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg border border-blue-200">
+              <strong>Total:</strong> {selectedFiles.length} file(s) • {formatFileSize(
+                selectedFiles.reduce((total, file) => total + file.size, 0)
+              )}
+            </div>
           </div>
         )}
 
         <Button 
           onClick={handleGenerateLink}
           disabled={selectedFiles.length === 0}
-          className="w-full"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3"
+          size="lg"
         >
-          <Share2 className="h-4 w-4 mr-2" />
+          <Share2 className="h-5 w-5 mr-2" />
           Generate Share Link
         </Button>
 
         {shareLink && (
-          <div className="space-y-2">
-            <div className="bg-gray-100 p-3 rounded-lg font-mono text-sm break-all">
+          <div className="space-y-3 p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
+            <h4 className="font-semibold text-gray-800">Your Share Link:</h4>
+            <div className="bg-white p-3 rounded-lg border border-gray-200 font-mono text-sm break-all">
               {shareLink}
             </div>
             <Button 
               onClick={copyLinkToClipboard}
               className="w-full"
               variant="outline"
+              size="lg"
             >
               {copiedToClipboard ? (
                 <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Copied!
+                  <Check className="h-4 w-4 mr-2 text-green-600" />
+                  Copied to Clipboard!
                 </>
               ) : (
                 <>

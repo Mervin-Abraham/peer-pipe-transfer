@@ -1,11 +1,13 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
-import { Share2 } from 'lucide-react';
+import { Share2, Wifi, WifiOff } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { usePeerConnection } from '@/hooks/usePeerConnection.jsx';
+import { useSimplePeerConnection } from '@/hooks/useSimplePeerConnection.jsx';
 import { FileSelector } from '@/components/FileSelector';
 import { FileReceiver } from '@/components/FileReceiver.jsx';
 
@@ -26,7 +28,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
     generateShareLink,
     isConnecting,
     connectionStatus 
-  } = usePeerConnection({
+  } = useSimplePeerConnection({
     onFileReceived: (files) => {
       toast({
         title: "Files received!",
@@ -42,7 +44,6 @@ export const FileTransfer = ({ connectToPeerId }) => {
       setIsConnected(connected);
       
       if (wasConnected && !connected) {
-        // Connection was lost
         setWasDisconnected(true);
         setAvailableFiles([]);
         setTransferProgress(0);
@@ -53,7 +54,6 @@ export const FileTransfer = ({ connectToPeerId }) => {
           variant: "destructive",
         });
         
-        // Reset to initial mode if we were a receiver
         if (mode === 'receiver') {
           setTimeout(() => {
             setMode('initial');
@@ -65,7 +65,6 @@ export const FileTransfer = ({ connectToPeerId }) => {
     onIncomingFiles: (fileList) => {
       console.log('FileTransfer: Received incoming files:', fileList);
       setAvailableFiles(fileList);
-      // Only set mode to receiver if we're not already a sender and not in initial mode from URL
       if (mode === 'initial' && !connectToPeerId) {
         setMode('receiver');
       }
@@ -115,7 +114,6 @@ export const FileTransfer = ({ connectToPeerId }) => {
   const handleFilesSelected = useCallback((files) => {
     console.log('Files selected for sharing:', files.length);
     setFilesForSharing(files);
-    // Set mode to sender when files are selected (regardless of current mode, unless we're a receiver from URL)
     if (!connectToPeerId) {
       setMode('sender');
     }
@@ -133,7 +131,6 @@ export const FileTransfer = ({ connectToPeerId }) => {
     }
   }, [requestFiles, toast]);
 
-  // Show connection status
   useEffect(() => {
     if (isConnected && mode === 'receiver') {
       toast({
@@ -143,132 +140,170 @@ export const FileTransfer = ({ connectToPeerId }) => {
     }
   }, [isConnected, mode, toast]);
 
+  const getConnectionBadge = () => {
+    switch (connectionStatus) {
+      case 'Connected':
+        return <Badge variant="default" className="bg-green-500 hover:bg-green-600"><Wifi className="w-3 h-3 mr-1" />Connected</Badge>;
+      case 'Connecting':
+        return <Badge variant="secondary"><Wifi className="w-3 h-3 mr-1" />Connecting...</Badge>;
+      case 'Waiting for connection':
+        return <Badge variant="outline"><Wifi className="w-3 h-3 mr-1" />Waiting</Badge>;
+      default:
+        return <Badge variant="destructive"><WifiOff className="w-3 h-3 mr-1" />Offline</Badge>;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Peer Pipe Transfer</h1>
-          <p className="text-lg text-gray-600">Secure peer-to-peer file sharing</p>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
+      <div className="max-w-6xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="text-center space-y-4">
+          <div className="flex items-center justify-center space-x-2">
+            <Share2 className="h-8 w-8 text-blue-600" />
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              Peer Pipe Transfer
+            </h1>
+          </div>
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            Secure peer-to-peer file sharing with no servers, no limits, just direct connections
+          </p>
+          <div className="flex justify-center">
+            {getConnectionBadge()}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Your Peer ID Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Share2 className="h-5 w-5" />
+          <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-2 text-gray-800">
+                <Share2 className="h-5 w-5 text-blue-600" />
                 Your Peer ID
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-gray-600">
                 Your unique identifier for this session
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="bg-gray-100 p-3 rounded-lg font-mono text-sm break-all">
-                {localPeerId || 'Generating...'}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
+                <code className="text-lg font-mono font-bold text-blue-800 break-all">
+                  {localPeerId || 'Generating...'}
+                </code>
               </div>
-              <div className="text-sm text-gray-600">
-                Connection Status: <span className={`font-medium ${
-                  connectionStatus === 'Connected' ? 'text-green-600' :
-                  connectionStatus === 'Disconnected' && wasDisconnected ? 'text-red-600' :
-                  'text-gray-600'
-                }`}>{connectionStatus}</span>
+              
+              <div className="flex flex-wrap gap-2">
+                {mode === 'sender' && (
+                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                    📤 Sender Mode
+                  </Badge>
+                )}
+                {mode === 'receiver' && !wasDisconnected && (
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    📥 Receiver Mode
+                  </Badge>
+                )}
+                {wasDisconnected && (
+                  <Badge variant="destructive">
+                    ⚠️ Disconnected
+                  </Badge>
+                )}
               </div>
-              {mode === 'sender' && (
-                <div className="text-sm text-blue-600">
-                  Mode: Waiting for receiver to connect
-                </div>
-              )}
-              {mode === 'receiver' && !wasDisconnected && (
-                <div className="text-sm text-green-600">
-                  Mode: Connected as receiver
-                </div>
-              )}
-              {wasDisconnected && (
-                <div className="text-sm text-red-600">
-                  Sender disconnected. Returning to main screen...
-                </div>
-              )}
             </CardContent>
           </Card>
 
           {/* Connect to Peer Card */}
           {!connectToPeerId && mode !== 'sender' && !wasDisconnected && (
-            <Card>
+            <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle>Connect to Peer</CardTitle>
-                <CardDescription>
+                <CardTitle className="text-gray-800">Connect to Peer</CardTitle>
+                <CardDescription className="text-gray-600">
                   Enter a peer ID to connect and receive files
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Input
-                  placeholder="Enter peer ID"
+                  placeholder="Enter peer ID (e.g., abc123def)"
                   value={peerId}
                   onChange={(e) => setPeerId(e.target.value)}
                   disabled={isConnecting || isConnected}
+                  className="bg-white/80 border-gray-200 focus:border-blue-500"
                 />
                 <Button 
                   onClick={handleConnect}
                   disabled={!peerId.trim() || isConnecting || isConnected}
-                  className="w-full"
+                  className="w-full bg-blue-600 hover:bg-blue-700"
+                  size="lg"
                 >
-                  {isConnecting ? 'Connecting...' : isConnected ? 'Connected' : 'Connect'}
+                  {isConnecting ? (
+                    <>
+                      <Wifi className="w-4 h-4 mr-2 animate-pulse" />
+                      Connecting...
+                    </>
+                  ) : isConnected ? (
+                    <>
+                      <Wifi className="w-4 h-4 mr-2" />
+                      Connected
+                    </>
+                  ) : (
+                    <>
+                      <Wifi className="w-4 h-4 mr-2" />
+                      Connect
+                    </>
+                  )}
                 </Button>
               </CardContent>
             </Card>
           )}
 
+          {/* Auto-Connect Card */}
           {connectToPeerId && !wasDisconnected && (
-            <Card>
+            <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle>Auto-Connecting</CardTitle>
-                <CardDescription>
-                  Connecting to peer: {connectToPeerId}
+                <CardTitle className="text-gray-800">Auto-Connecting</CardTitle>
+                <CardDescription className="text-gray-600">
+                  Connecting to peer: <code className="bg-gray-100 px-2 py-1 rounded">{connectToPeerId}</code>
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-4">
+                <div className="text-center py-6">
                   {isConnecting ? (
-                    <p className="text-blue-600">Connecting...</p>
+                    <div className="space-y-2">
+                      <Wifi className="w-8 h-8 mx-auto text-blue-600 animate-pulse" />
+                      <p className="text-blue-600 font-medium">Connecting...</p>
+                    </div>
                   ) : isConnected ? (
-                    <p className="text-green-600">Connected!</p>
+                    <div className="space-y-2">
+                      <Wifi className="w-8 h-8 mx-auto text-green-600" />
+                      <p className="text-green-600 font-medium">Connected!</p>
+                    </div>
                   ) : (
-                    <p className="text-red-600">Connection failed</p>
+                    <div className="space-y-2">
+                      <WifiOff className="w-8 h-8 mx-auto text-red-600" />
+                      <p className="text-red-600 font-medium">Connection failed</p>
+                    </div>
                   )}
                 </div>
               </CardContent>
             </Card>
           )}
 
+          {/* Sender Mode Card */}
           {mode === 'sender' && (
-            <Card>
+            <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle>Sender Mode</CardTitle>
-                <CardDescription>
-                  Waiting for receiver to connect
+                <CardTitle className="text-gray-800">Sender Mode Active</CardTitle>
+                <CardDescription className="text-gray-600">
+                  Share your link and wait for receivers to connect
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-4">
-                  <p className="text-blue-600">Share your link and wait for connection...</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {wasDisconnected && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Connection Lost</CardTitle>
-                <CardDescription>
-                  The sender has disconnected
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-4">
-                  <p className="text-red-600">Connection was lost. Files are no longer available.</p>
-                  <p className="text-sm text-gray-500 mt-2">Returning to main screen automatically...</p>
+                <div className="text-center py-6 space-y-4">
+                  <div className="w-16 h-16 mx-auto bg-blue-100 rounded-full flex items-center justify-center">
+                    <Share2 className="w-8 h-8 text-blue-600" />
+                  </div>
+                  <p className="text-blue-600 font-medium">Ready to share files!</p>
+                  <p className="text-sm text-gray-500">Copy your share link below and send it to recipients</p>
                 </div>
               </CardContent>
             </Card>
@@ -277,33 +312,51 @@ export const FileTransfer = ({ connectToPeerId }) => {
 
         {/* Progress Bar */}
         {transferProgress > 0 && (
-          <Card>
+          <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
             <CardContent className="pt-6">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Transfer Progress</span>
-                  <span>{transferProgress}%</span>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-700">Transfer Progress</span>
+                  <span className="text-sm font-bold text-blue-600">{transferProgress}%</span>
                 </div>
-                <Progress value={transferProgress} />
+                <Progress value={transferProgress} className="h-3" />
               </div>
             </CardContent>
           </Card>
         )}
 
         {/* File Operations */}
-        {(mode === 'sender' || mode === 'initial') && !wasDisconnected && (
-          <FileSelector 
-            onFilesSelected={handleFilesSelected}
-            onGenerateLink={generateShareLink}
-          />
-        )}
+        <div className="space-y-6">
+          {(mode === 'sender' || mode === 'initial') && !wasDisconnected && (
+            <FileSelector 
+              onFilesSelected={handleFilesSelected}
+              onGenerateLink={generateShareLink}
+            />
+          )}
 
-        {mode === 'receiver' && !wasDisconnected && (
-          <FileReceiver 
-            availableFiles={availableFiles}
-            onDownloadSelected={handleDownloadSelected}
-            isConnected={isConnected}
-          />
+          {mode === 'receiver' && !wasDisconnected && (
+            <FileReceiver 
+              availableFiles={availableFiles}
+              onDownloadSelected={handleDownloadSelected}
+              isConnected={isConnected}
+            />
+          )}
+        </div>
+
+        {/* Connection Lost Message */}
+        {wasDisconnected && (
+          <Card className="shadow-lg border-0 bg-red-50/70 backdrop-blur-sm border-red-200">
+            <CardContent className="pt-6">
+              <div className="text-center py-6 space-y-4">
+                <WifiOff className="w-16 h-16 mx-auto text-red-500" />
+                <div>
+                  <h3 className="text-lg font-semibold text-red-800">Connection Lost</h3>
+                  <p className="text-red-600">The sender has disconnected. Files are no longer available.</p>
+                  <p className="text-sm text-red-500 mt-2">Returning to main screen automatically...</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>
