@@ -1,5 +1,5 @@
 
-import { FileTransfer } from "@/components/FileTransfer.js";
+import { FileTransfer } from "@/components/FileTransfer.jsx";
 import { Toaster } from "@/components/ui/toaster";
 import { useSearchParams } from "react-router-dom";
 
