@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { useSimplePeerConnection } from '@/hooks/useSimplePeerConnection.jsx';
+import { usePeerConnection } from '@/hooks/usePeerConnection.jsx';
 import { FileSelector } from '@/components/FileSelector';
 import { FileReceiver } from '@/components/FileReceiver.jsx';
 
@@ -16,7 +16,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
   const [peerId, setPeerId] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [availableFiles, setAvailableFiles] = useState([]);
-  const [mode, setMode] = useState('initial');
+  const [mode, setMode] = useState(connectToPeerId ? 'receiver' : 'initial');
   const [wasDisconnected, setWasDisconnected] = useState(false);
   const { toast } = useToast();
   
@@ -28,7 +28,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
     generateShareLink,
     isConnecting,
     connectionStatus 
-  } = useSimplePeerConnection({
+  } = usePeerConnection({
     onFileReceived: (files) => {
       toast({
         title: "Files received!",
@@ -50,7 +50,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
         
         toast({
           title: "Connection lost",
-          description: "The sender has disconnected",
+          description: "The connection has been lost",
           variant: "destructive",
         });
         
@@ -65,19 +65,15 @@ export const FileTransfer = ({ connectToPeerId }) => {
     onIncomingFiles: (fileList) => {
       console.log('FileTransfer: Received incoming files:', fileList);
       setAvailableFiles(fileList);
-      if (mode === 'initial' && !connectToPeerId) {
-        setMode('receiver');
-      }
       setWasDisconnected(false);
     }
   });
 
-  // Auto-connect if peer ID is provided in URL (receiver mode)
+  // Auto-connect if peer ID is provided in URL (receiver mode only)
   useEffect(() => {
-    if (connectToPeerId && mode === 'initial') {
+    if (connectToPeerId && mode === 'receiver') {
       console.log('Auto-connecting to peer:', connectToPeerId);
       setPeerId(connectToPeerId);
-      setMode('receiver');
       connect(connectToPeerId).catch((error) => {
         console.error('Auto-connection failed:', error);
         toast({
@@ -90,7 +86,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
   }, [connectToPeerId, mode, connect, toast]);
 
   const handleConnect = useCallback(async () => {
-    if (peerId.trim()) {
+    if (peerId.trim() && mode !== 'sender') {
       try {
         setMode('receiver');
         setWasDisconnected(false);
@@ -106,18 +102,22 @@ export const FileTransfer = ({ connectToPeerId }) => {
           description: "Could not connect to the specified peer ID",
           variant: "destructive",
         });
-        setMode('initial');
+        if (!connectToPeerId) {
+          setMode('initial');
+        }
       }
     }
-  }, [peerId, connect, toast]);
+  }, [peerId, connect, toast, mode]);
 
   const handleFilesSelected = useCallback((files) => {
     console.log('Files selected for sharing:', files.length);
-    setFilesForSharing(files);
-    if (!connectToPeerId) {
+    
+    // Only allow file selection if not already in receiver mode
+    if (mode !== 'receiver') {
+      setFilesForSharing(files);
       setMode('sender');
     }
-  }, [setFilesForSharing, connectToPeerId]);
+  }, [setFilesForSharing, mode]);
 
   const handleDownloadSelected = useCallback((fileIds) => {
     try {
@@ -145,6 +145,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
       case 'Connected':
         return <Badge variant="default" className="bg-green-500 hover:bg-green-600"><Wifi className="w-3 h-3 mr-1" />Connected</Badge>;
       case 'Connecting':
+      case 'Connecting...':
         return <Badge variant="secondary"><Wifi className="w-3 h-3 mr-1" />Connecting...</Badge>;
       case 'Waiting for connection':
         return <Badge variant="outline"><Wifi className="w-3 h-3 mr-1" />Waiting</Badge>;
@@ -165,7 +166,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
             </h1>
           </div>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Secure peer-to-peer file sharing with no servers, no limits, just direct connections
+            Secure peer-to-peer file sharing with real WebRTC connections
           </p>
           <div className="flex justify-center">
             {getConnectionBadge()}
@@ -179,7 +180,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-gray-800">
                 <Share2 className="h-5 w-5 text-blue-600" />
-                Your Peer ID
+                Your Session ID
               </CardTitle>
               <CardDescription className="text-gray-600">
                 Your unique identifier for this session
@@ -212,18 +213,18 @@ export const FileTransfer = ({ connectToPeerId }) => {
             </CardContent>
           </Card>
 
-          {/* Connect to Peer Card */}
+          {/* Connect to Peer Card - Only show if not in sender mode and not auto-connecting */}
           {!connectToPeerId && mode !== 'sender' && !wasDisconnected && (
             <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle className="text-gray-800">Connect to Peer</CardTitle>
+                <CardTitle className="text-gray-800">Connect to Sender</CardTitle>
                 <CardDescription className="text-gray-600">
-                  Enter a peer ID to connect and receive files
+                  Enter a session ID to connect and receive files
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Input
-                  placeholder="Enter peer ID (e.g., abc123def)"
+                  placeholder="Enter session ID (e.g., abc123def)"
                   value={peerId}
                   onChange={(e) => setPeerId(e.target.value)}
                   disabled={isConnecting || isConnected}
@@ -262,7 +263,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
               <CardHeader>
                 <CardTitle className="text-gray-800">Auto-Connecting</CardTitle>
                 <CardDescription className="text-gray-600">
-                  Connecting to peer: <code className="bg-gray-100 px-2 py-1 rounded">{connectToPeerId}</code>
+                  Connecting to sender: <code className="bg-gray-100 px-2 py-1 rounded">{connectToPeerId}</code>
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -327,10 +328,12 @@ export const FileTransfer = ({ connectToPeerId }) => {
 
         {/* File Operations */}
         <div className="space-y-6">
-          {(mode === 'sender' || mode === 'initial') && !wasDisconnected && (
+          {/* Only show file selector if not in receiver mode */}
+          {mode !== 'receiver' && !wasDisconnected && (
             <FileSelector 
               onFilesSelected={handleFilesSelected}
               onGenerateLink={generateShareLink}
+              disabled={mode === 'receiver'}
             />
           )}
 
@@ -351,7 +354,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
                 <WifiOff className="w-16 h-16 mx-auto text-red-500" />
                 <div>
                   <h3 className="text-lg font-semibold text-red-800">Connection Lost</h3>
-                  <p className="text-red-600">The sender has disconnected. Files are no longer available.</p>
+                  <p className="text-red-600">The connection has been lost. Files are no longer available.</p>
                   <p className="text-sm text-red-500 mt-2">Returning to main screen automatically...</p>
                 </div>
               </div>

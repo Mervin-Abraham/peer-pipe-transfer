@@ -1,7 +1,8 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 
-const SIGNALING_SERVER_URL = 'ws://localhost:8080';
+// Use the deployed edge function for signaling
+const SIGNALING_SERVER_URL = 'wss://pvcqfotzbntthdlmyefj.supabase.co/functions/v1/signaling-server';
 
 export const useConnectionManager = ({ 
   onConnectionChange, 
@@ -99,7 +100,7 @@ export const useConnectionManager = ({
         onConnectionChange(true);
       } else if (state === 'disconnected') {
         console.log('ICE connection disconnected - network issue detected');
-        setConnectionStatus('Peer connection lost');
+        setConnectionStatus('Connection lost');
         handleDisconnection();
       } else if (state === 'failed') {
         console.log('ICE connection failed - connection cannot be established');
@@ -154,7 +155,7 @@ export const useConnectionManager = ({
 
     channel.onclose = () => {
       console.log('Data channel closed by peer');
-      setConnectionStatus('Sender closed the data channel');
+      setConnectionStatus('Data channel closed');
       handleDisconnection();
     };
 
@@ -262,6 +263,12 @@ export const useConnectionManager = ({
           console.log('Peer left the room');
           handleDisconnection();
           break;
+
+        case 'error':
+          console.error('Signaling error:', message.message);
+          setConnectionStatus('Signaling error');
+          handleDisconnection();
+          break;
       }
     };
 
@@ -328,7 +335,7 @@ export const useConnectionManager = ({
         setupDataChannel(channel);
         
         connectionRef.current = {
-          peer,
+          ...connectionRef.current,
           dataChannel: channel,
           isInitiator: false
         };
