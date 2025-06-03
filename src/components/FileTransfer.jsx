@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { Share2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,9 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { usePeerConnection } from '@/hooks/usePeerConnection.js';
+import { usePeerConnection } from '@/hooks/usePeerConnection.jsx';
 import { FileSelector } from '@/components/FileSelector';
-import { FileReceiver } from '@/components/FileReceiver.js';
+import { FileReceiver } from '@/components/FileReceiver.jsx';
 
 export const FileTransfer = ({ connectToPeerId }) => {
   const [transferProgress, setTransferProgress] = useState(0);

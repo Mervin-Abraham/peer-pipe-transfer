@@ -1,7 +1,6 @@
-
 import { useState, useCallback } from 'react';
-import { useFileTransfer } from './useFileTransfer.js';
-import { useConnectionManager } from './useConnectionManager.js';
+import { useFileTransfer } from './useFileTransfer.jsx';
+import { useConnectionManager } from './useConnectionManager.jsx';
 
 export const usePeerConnection = ({
   onFileReceived,
