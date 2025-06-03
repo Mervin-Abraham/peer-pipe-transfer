@@ -2,7 +2,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 
 // Use the deployed edge function for signaling
-const SIGNALING_SERVER_URL = 'wss://pvcqfotzbntthdlmyefj.supabase.co/functions/v1/signaling-server';
+const SIGNALING_SERVER_URL = 'https://wide-tiger-20.deno.dev';
 
 export const useConnectionManager = ({ 
   onConnectionChange, 
@@ -611,7 +611,12 @@ export const useConnectionManager = ({
       }
     };
 
-    return socket;
+    return () => {
+      // Cleanup on unmount or disconnect
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close();
+      }
+    };
   }, [handleDisconnection]);
 
   const waitForConnection = useCallback(async () => {
@@ -689,9 +694,12 @@ export const useConnectionManager = ({
     return () => {
       if (connectionRef.current?.peer) {
         connectionRef.current.peer.close();
+        connectionRef.current.dataChannel?.close();
+        connectionRef.current = null;
       }
       if (signalingSocketRef.current) {
         signalingSocketRef.current.close();
+        signalingSocketRef.current = null;
       }
     };
   }, []);
