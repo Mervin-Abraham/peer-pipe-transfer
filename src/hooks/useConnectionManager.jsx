@@ -393,13 +393,19 @@ export const useConnectionManager = ({
 
 	const connect = useCallback(async (remotePeerId) => {
 		console.log('Receiver connecting to sender:', remotePeerId);
+
+		if (isConnecting || signalingSocketRef.current || connectionRef.current?.peer) {
+			console.warn('[Receiver] Already connecting or connected. Skipping duplicate attempt.');
+			return;
+		}
+
 		setIsConnecting(true);
 		setConnectionStatus('Connecting');
 
 		try {
 			const peer = createPeerConnection();
 
-			// Listen for incoming data channel
+			// Setup incoming data channel
 			peer.ondatachannel = (event) => {
 				console.log('Received data channel from sender');
 				const channel = event.channel;
@@ -418,11 +424,12 @@ export const useConnectionManager = ({
 				isInitiator: false
 			};
 
-			// Use the remotePeerId as the room ID
-			if (connectionRef.current?.peer || signalingSocketRef.current?.readyState === WebSocket.OPEN) {
-				console.warn("Already connected. Skipping reconnect.");
-				return;
-			}
+			// Prevent redundant signaling connections
+			// // Use the remotePeerId as the room ID
+			// if (connectionRef.current?.peer || signalingSocketRef.current?.readyState === WebSocket.OPEN) {
+			// 	console.warn("Already connected. Skipping reconnect.");
+			// 	return;
+			// }
 			setupSignalingSocket(remotePeerId, 'receiver');
 
 		} catch (error) {
@@ -431,7 +438,8 @@ export const useConnectionManager = ({
 			setConnectionStatus('Disconnected');
 			throw error;
 		}
-	}, [createPeerConnection, setupDataChannel, setupSignalingSocket]);
+	}, [isConnecting, createPeerConnection, setupDataChannel, setupSignalingSocket]);
+
 
 	// Cleanup on unmount
 	useEffect(() => {
