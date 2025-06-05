@@ -363,7 +363,7 @@ export const useConnectionManager = ({
 		};
 
 		return createSocket();
-	}, [handleDisconnection]);
+	}, []);
 
 	const waitForConnection = useCallback(async () => {
 		console.log('Sender waiting for incoming connections...');
