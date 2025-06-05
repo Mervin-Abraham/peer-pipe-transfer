@@ -37,7 +37,6 @@ export const usePeerConnection = ({
     isConnecting,
     isWaitingForConnection,
     connectionRef,
-    waitForConnection,
     connect,
     handleDisconnection
   } = useConnectionManager({
@@ -64,17 +63,7 @@ export const usePeerConnection = ({
       setRoomId(Math.random().toString(36).substr(2, 9));
       return;
     }
-
-    if (!isWaitingForConnection && !dataChannel) {
-      waitForConnection().then(() => {
-        const openChannel = connectionRef.current?.dataChannel;
-        if (openChannel?.readyState === 'open') {
-          sendFileList(openChannel);
-          setRoomId(Math.random().toString(36).substr(2, 9));
-        }
-      });
-    }
-  }, [isWaitingForConnection, waitForConnection, connectionRef, setFilesForSharingInternal, sendFileList]);
+  }, [connectionRef, setFilesForSharingInternal, sendFileList]);
 
   const requestFiles = useCallback((fileIds) => {
     if (!connectionRef.current?.dataChannel) {

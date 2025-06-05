@@ -1,6 +1,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ICE_SERVERS } from '../config/webrtcConfig';
+import { constrainedMemory } from 'process';
 
 // Use the deployed edge function for signaling
 const SIGNALING_SERVER_URL = 'wss://wide-tiger-20.deno.dev/';
@@ -20,17 +21,6 @@ export const useConnectionManager = ({
 	const roomIdRef = useRef(null);
 	const roleRef = useRef(null);
 	const connectingAttemptedRef = useRef(false);
-	let retryAttempts = 0;
-
-	const retryConnection = useCallback((roomId) => {
-		const delay = Math.min(1000 * 2 ** retryAttempts, 30000); // max 30s
-		retryAttempts++;
-
-		setTimeout(() => {
-			console.warn(`Retrying connection attempt #${retryAttempts}`);
-			setupSignalingSocket(roomId);
-		}, delay);
-	})
 
 	const cleanup = useCallback(() => {
 		if (connectionRef.current?.peer) {
@@ -62,7 +52,6 @@ export const useConnectionManager = ({
 		setIsConnecting(false);
 		setIsWaitingForConnection(false);
 		onConnectionChange(false);
-		connectingAttemptedRef.current = false;
 
 		if (connectionRef.current?.dataChannel) {
 			connectionRef.current.dataChannel.close();
@@ -223,10 +212,11 @@ export const useConnectionManager = ({
 	}, [onDataChannelOpen, onMessage, onFileChunk, onConnectionChange, handleDisconnection]);
 
 	const setupSignalingSocket = useCallback((roomId, role) => {
+		connectingAttemptedRef.current = true;
+
 		console.log(`Setting up signaling socket for ${role} in room:`, roomId);
 		console.log('Signaling state:', signalingSocketRef.current?.readyState);
 		console.log('ConnectionRef:', !!connectionRef.current?.peer);
-		console.log('Already attempting:', connectingAttemptedRef.current);
 
 		let retryCount = 0;
 		const maxRetries = 5;
@@ -332,7 +322,6 @@ export const useConnectionManager = ({
 				setConnectionStatus('Signaling error');
 				handleDisconnection();
 				cleanup();
-				// retryConnection(roomId);
 				attemptReconnect();
 			};
 
@@ -340,7 +329,6 @@ export const useConnectionManager = ({
 				console.log('Signaling socket closed');
 				handleDisconnection();
 				cleanup();
-				// retryConnection(roomId);
 				attemptReconnect();
 			};
 
@@ -363,44 +351,11 @@ export const useConnectionManager = ({
 		};
 
 		return createSocket();
-	}, [cleanup, handleDisconnection, retryConnection]);
-
-	const waitForConnection = useCallback(async () => {
-		console.log('Sender waiting for incoming connections...');
-		setIsWaitingForConnection(true);
-		setConnectionStatus('Waiting for connection');
-
-		try {
-			const peer = createPeerConnection();
-
-			// Create data channel as the sender
-			const dataChannel = peer.createDataChannel('fileTransfer', {
-				ordered: true
-			});
-
-			setupDataChannel(dataChannel);
-
-			connectionRef.current = {
-				peer,
-				dataChannel,
-				isInitiator: true
-			};
-
-			// Generate room ID for this session
-			const roomId = Math.random().toString(36).substr(2, 9);
-			setupSignalingSocket(roomId, 'sender');
-
-		} catch (error) {
-			console.error('Failed to wait for connection:', error);
-			setIsWaitingForConnection(false);
-			throw error;
-		}
-	}, [createPeerConnection, setupDataChannel, setupSignalingSocket]);
+	}, [cleanup, handleDisconnection]);
 
 	const connect = useCallback(async (remotePeerId) => {
 		console.log('Signaling state:', signalingSocketRef.current?.readyState);
 		console.log('ConnectionRef:', !!connectionRef.current?.peer);
-		console.log('Already attempting:', connectingAttemptedRef.current);
 
 		console.log('Receiver connecting to sender:', remotePeerId);
 
@@ -439,17 +394,19 @@ export const useConnectionManager = ({
 				console.warn('[Signaling] Socket already open or connecting. Aborting duplicate setup.');
 				return;
 			}
-			connectingAttemptedRef.current = true;
+			if (connectingAttemptedRef.current) {
+				console.warn('[Signaling] Connection already attempted. Aborting duplicate setup.');
+				return;
+			}
 			setupSignalingSocket(remotePeerId, 'receiver');
 
 		} catch (error) {
 			console.error('Connection failed:', error);
 			setIsConnecting(false);
-			connectingAttemptedRef.current = false;
 			setConnectionStatus('Disconnected');
 			throw error;
 		}
-	}, [isConnecting, createPeerConnection, setupDataChannel, setupSignalingSocket]);
+	}, [isConnecting, createPeerConnection, setupDataChannel]);
 
 	// Cleanup on unmount
 	useEffect(() => {
@@ -471,7 +428,6 @@ export const useConnectionManager = ({
 		isConnecting,
 		isWaitingForConnection,
 		connectionRef,
-		waitForConnection,
 		connect,
 		handleDisconnection
 	};
