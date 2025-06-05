@@ -406,7 +406,7 @@ export const useConnectionManager = ({
 			setConnectionStatus('Disconnected');
 			throw error;
 		}
-	}, [isConnecting, createPeerConnection, setupDataChannel]);
+	}, [isConnecting, createPeerConnection, setupDataChannel, setupSignalingSocket]);
 
 	// Cleanup on unmount
 	useEffect(() => {
