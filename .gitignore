@@ -12,44 +12,6 @@ dist
 dist-ssr
 *.local
 
-# Lock files
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
-# Unwanted project files
-*.tmp
-*.bak
-*.swp
-*.swn
-*.orig
-*.rej
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-*.log.[0-9]*
-*.pid
-*.seed
-*.tgz
-*.gz
-*.zip
-*.tar
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.7z
-*.rar
-*.tmp.*
-*.cache
-.cache/
-.cache-loader/
-.nyc_output/
-coverage/
-bower_components/
-jspm_packages/
-typings/
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

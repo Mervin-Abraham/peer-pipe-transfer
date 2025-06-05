@@ -37,6 +37,7 @@ export const usePeerConnection = ({
     isConnecting,
     isWaitingForConnection,
     connectionRef,
+    waitForConnection,
     connect,
     handleDisconnection
   } = useConnectionManager({
@@ -54,7 +55,7 @@ export const usePeerConnection = ({
   const setFilesForSharing = useCallback((files) => {
     setSelectedFiles(files);
     setFilesForSharingInternal(files);
-
+    
     const dataChannel = connectionRef.current?.dataChannel;
 
     if (dataChannel?.readyState === 'open') {
@@ -63,7 +64,22 @@ export const usePeerConnection = ({
       setRoomId(Math.random().toString(36).substr(2, 9));
       return;
     }
-  }, [connectionRef, setFilesForSharingInternal, sendFileList]);
+
+    // Start waiting for connections when files are ready
+    if (!isWaitingForConnection && !connectionRef.current) {
+      waitForConnection().then(() => {
+        // Extract room ID from the connection process
+        // In a real implementation, this would come from the signaling
+        const generatedRoomId = Math.random().toString(36).substr(2, 9);
+        setRoomId(generatedRoomId);
+      });
+    }
+
+    // If we're already connected, send the file list immediately
+    if (connectionRef.current?.dataChannel?.readyState === 'open') {
+      sendFileList(connectionRef.current.dataChannel);
+    }
+  }, [isWaitingForConnection, waitForConnection, connectionRef, setFilesForSharingInternal, sendFileList]);
 
   const requestFiles = useCallback((fileIds) => {
     if (!connectionRef.current?.dataChannel) {

@@ -1,7 +1,6 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ICE_SERVERS } from '../config/webrtcConfig';
-import { constrainedMemory } from 'process';
 
 // Use the deployed edge function for signaling
 const SIGNALING_SERVER_URL = 'wss://wide-tiger-20.deno.dev/';
@@ -351,7 +350,39 @@ export const useConnectionManager = ({
 		};
 
 		return createSocket();
-	}, [cleanup, handleDisconnection]);
+	}, [handleDisconnection, cleanup]);
+
+	const waitForConnection = useCallback(async () => {
+		console.log('Sender waiting for incoming connections...');
+		setIsWaitingForConnection(true);
+		setConnectionStatus('Waiting for connection');
+
+		try {
+			const peer = createPeerConnection();
+
+			// Create data channel as the sender
+			const dataChannel = peer.createDataChannel('fileTransfer', {
+				ordered: true
+			});
+
+			setupDataChannel(dataChannel);
+
+			connectionRef.current = {
+				peer,
+				dataChannel,
+				isInitiator: true
+			};
+
+			// Generate room ID for this session
+			const roomId = Math.random().toString(36).substr(2, 9);
+			setupSignalingSocket(roomId, 'sender');
+
+		} catch (error) {
+			console.error('Failed to wait for connection:', error);
+			setIsWaitingForConnection(false);
+			throw error;
+		}
+	}, [createPeerConnection, setupDataChannel, setupSignalingSocket]);
 
 	const connect = useCallback(async (remotePeerId) => {
 		console.log('Signaling state:', signalingSocketRef.current?.readyState);
@@ -406,7 +437,7 @@ export const useConnectionManager = ({
 			setConnectionStatus('Disconnected');
 			throw error;
 		}
-	}, [isConnecting, createPeerConnection, setupDataChannel, setupSignalingSocket]);
+	}, [createPeerConnection, setupDataChannel, setupSignalingSocket]);
 
 	// Cleanup on unmount
 	useEffect(() => {
@@ -428,6 +459,7 @@ export const useConnectionManager = ({
 		isConnecting,
 		isWaitingForConnection,
 		connectionRef,
+		waitForConnection,
 		connect,
 		handleDisconnection
 	};
