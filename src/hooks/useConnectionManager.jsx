@@ -332,7 +332,7 @@ export const useConnectionManager = ({
 				setConnectionStatus('Signaling error');
 				handleDisconnection();
 				cleanup();
-				retryConnection(roomId);
+				// retryConnection(roomId);
 				attemptReconnect();
 			};
 
@@ -340,7 +340,7 @@ export const useConnectionManager = ({
 				console.log('Signaling socket closed');
 				handleDisconnection();
 				cleanup();
-				retryConnection(roomId);
+				// retryConnection(roomId);
 				attemptReconnect();
 			};
 
@@ -363,7 +363,7 @@ export const useConnectionManager = ({
 		};
 
 		return createSocket();
-	}, []);
+	}, [cleanup, handleDisconnection, retryConnection]);
 
 	const waitForConnection = useCallback(async () => {
 		console.log('Sender waiting for incoming connections...');
