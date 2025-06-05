@@ -87,7 +87,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
         });
       });
     }
-  }, [connectToPeerId, mode, connect, toast]);
+  }, []);
 
   const handleConnect = useCallback(async () => {
     if (
