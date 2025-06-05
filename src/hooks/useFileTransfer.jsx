@@ -14,47 +14,57 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles })
   }, [onIncomingFiles, onProgress]);
 
   const handleMessage = useCallback((message, channel) => {
-    console.log('Received message:', message);
+    console.log('[RECEIVE] Message:', message);
 
     if (message.type === 'file-list') {
-      console.log('Received file list:', message.files);
+      console.log('[RECEIVE] Incoming file list:', message.files);
       onIncomingFiles(message.files || []);
-    } else if (message.type === 'file-request') {
-      console.log('File request received for:', message.fileIds);
-      // Send requested files
+    }
+
+    else if (message.type === 'file-request') {
+      console.log('[RECEIVE] Request for files:', message.fileIds);
       const requestedFiles = pendingFilesRef.current.filter(f =>
         message.fileIds?.includes(f.id)
       );
       requestedFiles.forEach(fileData => {
         sendSingleFile(fileData.file, fileData.id, channel);
       });
-    } else if (message.type === 'file-start') {
-      console.log('Starting file transfer:', message.fileName);
+    }
+
+    else if (message.type === 'file-start') {
+      console.log(`[RECEIVER] Starting to receive file: ${message.fileName}, size: ${message.fileSize}`);
       fileTransferRef.current = {
         chunks: [],
         fileName: message.fileName || '',
         fileSize: message.fileSize || 0,
         receivedSize: 0
       };
-    } else if (message.type === 'file-end') {
-      console.log('File transfer completed');
-      if (fileTransferRef.current) {
-        const blob = new Blob(fileTransferRef.current.chunks);
-        const file = new File([blob], fileTransferRef.current.fileName);
+    }
 
-        // Auto-download the file
+    else if (message.type === 'file-end') {
+      const fileData = fileTransferRef.current;
+      if (fileData) {
+        console.log(`[RECEIVER][${fileData.fileName}] Transfer complete. Received ${fileData.receivedSize}/${fileData.fileSize} bytes`);
+
+        const blob = new Blob(fileData.chunks);
+        const file = new File([blob], fileData.fileName);
+
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = fileTransferRef.current.fileName;
+        a.download = fileData.fileName;
         a.click();
         URL.revokeObjectURL(url);
 
+        console.log(`[RECEIVE][${fileData.fileName}] File reconstructed and download triggered.`);
+
         onFileReceived([file]);
         fileTransferRef.current = null;
+      } else {
+        console.warn('[RECEIVE] file-end received but no active file transfer.');
       }
     }
-  }, [onFileReceived, onIncomingFiles]);
+  }, [onFileReceived, onIncomingFiles, sendSingleFile]);
 
   const handleFileChunk = useCallback((data) => {
     if (fileTransferRef.current) {
@@ -62,16 +72,24 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles })
       fileTransferRef.current.receivedSize += data.byteLength;
 
       const progress = (fileTransferRef.current.receivedSize / fileTransferRef.current.fileSize) * 100;
+      console.log(`[RECEIVER] Received chunk: ${data.byteLength} bytes, total received: ${fileTransferRef.current.receivedSize}/${fileTransferRef.current.fileSize}`);
+
       onProgress(Math.round(progress));
     }
   }, [onProgress]);
 
   const sendSingleFile = useCallback(async (file, fileId, channel) => {
     if (!channel || channel.readyState !== 'open') {
+      console.error(`[SEND][${file.name}] No active connection.`);
       throw new Error('No active connection');
     }
 
     const chunkSize = 16384; // 16KB chunks
+    const totalChunks = Math.ceil(file.size / chunkSize);
+    let offset = 0;
+    let chunkIndex = 0;
+
+    console.log(`[SEND][${file.name}] Starting transfer. Size: ${file.size} bytes, Total Chunks: ${totalChunks}`);
 
     // Send file metadata
     channel.send(JSON.stringify({
@@ -81,29 +99,67 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles })
       fileId: fileId
     }));
 
-    // Send file in chunks
     const reader = new FileReader();
-    let offset = 0;
 
-    const sendChunk = () => {
+    reader.onerror = (err) => {
+      console.error(`[SEND][${file.name}] Read error at offset ${offset}:`, err);
+    };
+
+    const sendChunk = async () => {
       const slice = file.slice(offset, offset + chunkSize);
-      reader.onload = (event) => {
-        if (event.target?.result && channel.readyState === 'open') {
-          channel.send(event.target.result);
-          offset += chunkSize;
+      let retryCount = 0;
 
-          const progress = Math.min((offset / file.size) * 100, 100);
-          onProgress(Math.round(progress));
+      const trySend = () => {
+        const reader = new FileReader();
 
-          if (offset < file.size) {
-            setTimeout(sendChunk, 10);
-          } else {
-            // Send completion message
-            channel.send(JSON.stringify({ type: 'file-end', fileId: fileId }));
+        reader.onload = async (event) => {
+          const chunk = event.target?.result;
+
+          if (!chunk || channel.readyState !== 'open') {
+            console.warn(`[SEND][${file.name}] Chunk read failed or channel not open. Aborting.`);
+            return;
           }
-        }
+
+          try {
+            channel.send(chunk);
+
+            offset += chunkSize;
+            chunkIndex++;
+
+            console.log(`[SEND][${file.name}] Chunk ${chunkIndex}/${totalChunks} sent. Offset: ${offset}`);
+
+            const progress = Math.min((offset / file.size) * 100, 100);
+            onProgress(Math.round(progress));
+
+            if (offset < file.size) {
+              // Send next chunk
+              sendChunk();
+            } else {
+              console.log(`[SEND][${file.name}] All chunks sent. Sending file-end.`);
+              channel.send(JSON.stringify({ type: 'file-end', fileId: fileId }));
+            }
+          } catch (err) {
+            retryCount++;
+            console.error(`[SEND][${file.name}] Failed to send chunk at offset ${offset}. Retry ${retryCount}/5`, err);
+
+            if (retryCount < 5) {
+              setTimeout(() => trySend(), 100); // Retry after short delay
+            } else {
+              console.error(`[SEND][${file.name}] Chunk failed after ${retryCount} retries. Aborting transfer.`);
+              channel.send(JSON.stringify({ type: 'file-error', fileId }));
+            }
+          }
+        };
+
+        reader.onerror = (e) => {
+          console.error(`[SEND][${file.name}] FileReader error at offset ${offset}:`, e);
+          channel.send(JSON.stringify({ type: 'file-error', fileId }));
+        };
+
+        reader.readAsArrayBuffer(slice);
       };
-      reader.readAsArrayBuffer(slice);
+
+      trySend();
     };
 
     sendChunk();

@@ -44,6 +44,7 @@ export const usePeerConnection = ({
     onConnectionChange,
     onDataChannelOpen: (channel) => {
       // Send file list immediately when channel opens if we have files
+      console.log('[RECEIVER] DataChannel is open and ready!');
       sendFileList(channel);
     },
     onMessage: handleMessage,
@@ -55,19 +56,23 @@ export const usePeerConnection = ({
     setSelectedFiles(files);
     setFilesForSharingInternal(files);
 
-    // Start waiting for connections when files are ready
-    if (!isWaitingForConnection && !connectionRef.current) {
-      waitForConnection().then(() => {
-        // Extract room ID from the connection process
-        // In a real implementation, this would come from the signaling
-        const generatedRoomId = Math.random().toString(36).substr(2, 9);
-        setRoomId(generatedRoomId);
-      });
+    const dataChannel = connectionRef.current?.dataChannel;
+
+    if (dataChannel?.readyState === 'open') {
+      console.log('[PEER] DataChannel already open, sending file list immediately.');
+      sendFileList(dataChannel);
+      setRoomId(Math.random().toString(36).substr(2, 9));
+      return;
     }
 
-    // If we're already connected, send the file list immediately
-    if (connectionRef.current?.dataChannel?.readyState === 'open') {
-      sendFileList(connectionRef.current.dataChannel);
+    if (!isWaitingForConnection && !dataChannel) {
+      waitForConnection().then(() => {
+        const openChannel = connectionRef.current?.dataChannel;
+        if (openChannel?.readyState === 'open') {
+          sendFileList(openChannel);
+          setRoomId(Math.random().toString(36).substr(2, 9));
+        }
+      });
     }
   }, [isWaitingForConnection, waitForConnection, connectionRef, setFilesForSharingInternal, sendFileList]);
 
