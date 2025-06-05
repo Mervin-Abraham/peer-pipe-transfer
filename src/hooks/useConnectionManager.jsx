@@ -19,6 +19,7 @@ export const useConnectionManager = ({
 	const signalingSocketRef = useRef(null);
 	const roomIdRef = useRef(null);
 	const roleRef = useRef(null);
+	const connectingAttemptedRef = useRef(false);
 	let retryAttempts = 0;
 
 	const retryConnection = useCallback((roomId) => {
@@ -61,6 +62,7 @@ export const useConnectionManager = ({
 		setIsConnecting(false);
 		setIsWaitingForConnection(false);
 		onConnectionChange(false);
+		connectingAttemptedRef.current = false;
 
 		if (connectionRef.current?.dataChannel) {
 			connectionRef.current.dataChannel.close();
@@ -222,6 +224,10 @@ export const useConnectionManager = ({
 
 	const setupSignalingSocket = useCallback((roomId, role) => {
 		console.log(`Setting up signaling socket for ${role} in room:`, roomId);
+		console.log('Signaling state:', signalingSocketRef.current?.readyState);
+		console.log('ConnectionRef:', !!connectionRef.current?.peer);
+		console.log('Already attempting:', connectingAttemptedRef.current);
+
 		let retryCount = 0;
 		const maxRetries = 5;
 		const baseRetryDelay = 3000;
@@ -325,16 +331,16 @@ export const useConnectionManager = ({
 				console.error('Signaling socket error:', error);
 				setConnectionStatus('Signaling error');
 				handleDisconnection();
-				retryConnection(roomId);
 				cleanup();
+				retryConnection(roomId);
 				attemptReconnect();
 			};
 
 			socket.onclose = () => {
 				console.log('Signaling socket closed');
 				handleDisconnection();
-				retryConnection(roomId);
 				cleanup();
+				retryConnection(roomId);
 				attemptReconnect();
 			};
 
@@ -392,6 +398,10 @@ export const useConnectionManager = ({
 	}, [createPeerConnection, setupDataChannel, setupSignalingSocket]);
 
 	const connect = useCallback(async (remotePeerId) => {
+		console.log('Signaling state:', signalingSocketRef.current?.readyState);
+		console.log('ConnectionRef:', !!connectionRef.current?.peer);
+		console.log('Already attempting:', connectingAttemptedRef.current);
+
 		console.log('Receiver connecting to sender:', remotePeerId);
 
 		if (isConnecting || signalingSocketRef.current || connectionRef.current?.peer) {
@@ -425,21 +435,21 @@ export const useConnectionManager = ({
 			};
 
 			// Prevent redundant signaling connections
-			// // Use the remotePeerId as the room ID
-			// if (connectionRef.current?.peer || signalingSocketRef.current?.readyState === WebSocket.OPEN) {
-			// 	console.warn("Already connected. Skipping reconnect.");
-			// 	return;
-			// }
+			if (signalingSocketRef.current && signalingSocketRef.current.readyState !== WebSocket.CLOSED) {
+				console.warn('[Signaling] Socket already open or connecting. Aborting duplicate setup.');
+				return;
+			}
+			connectingAttemptedRef.current = true;
 			setupSignalingSocket(remotePeerId, 'receiver');
 
 		} catch (error) {
 			console.error('Connection failed:', error);
 			setIsConnecting(false);
+			connectingAttemptedRef.current = false;
 			setConnectionStatus('Disconnected');
 			throw error;
 		}
 	}, [isConnecting, createPeerConnection, setupDataChannel, setupSignalingSocket]);
-
 
 	// Cleanup on unmount
 	useEffect(() => {

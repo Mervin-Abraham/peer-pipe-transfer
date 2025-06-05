@@ -19,6 +19,8 @@ export const FileTransfer = ({ connectToPeerId }) => {
   const [mode, setMode] = useState(connectToPeerId ? 'receiver' : 'initial');
   const [wasDisconnected, setWasDisconnected] = useState(false);
   const { toast } = useToast();
+  const isAttemptingConnection = useRef(false);
+  const hasAttemptedAutoConnect = useRef(false);
 
   const {
     localPeerId,
@@ -71,9 +73,11 @@ export const FileTransfer = ({ connectToPeerId }) => {
 
   // Auto-connect if peer ID is provided in URL (receiver mode only)
   useEffect(() => {
-    if (connectToPeerId && mode === 'receiver') {
+    if (connectToPeerId && mode === 'receiver' && !hasAttemptedAutoConnect.current) {
       console.log('Auto-connecting to peer:', connectToPeerId);
       setPeerId(connectToPeerId);
+      hasAttemptedAutoConnect.current = true;
+
       connect(connectToPeerId).catch((error) => {
         console.error('Auto-connection failed:', error);
         toast({
@@ -86,8 +90,13 @@ export const FileTransfer = ({ connectToPeerId }) => {
   }, [connectToPeerId, mode, connect, toast]);
 
   const handleConnect = useCallback(async () => {
-    if (peerId.trim() && mode !== 'sender') {
+    if (
+      peerId.trim() &&
+      mode !== 'sender' &&
+      !isAttemptingConnection.current
+    ) {
       try {
+        isAttemptingConnection.current = true;
         setMode('receiver');
         setWasDisconnected(false);
         await connect(peerId.trim());
@@ -105,6 +114,8 @@ export const FileTransfer = ({ connectToPeerId }) => {
         if (!connectToPeerId) {
           setMode('initial');
         }
+      } finally {
+        isAttemptingConnection.current = false;
       }
     }
   }, [peerId, connect, toast, mode]);
