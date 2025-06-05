@@ -13,13 +13,13 @@ const rooms = new Map<string, Room>();
 function broadcastToRoom(roomId: string, message: any, excludeSocket?: WebSocket) {
   const room = rooms.get(roomId);
   if (!room) return;
-  
+
   const messageStr = JSON.stringify(message);
-  
+
   if (room.sender && room.sender !== excludeSocket && room.sender.readyState === WebSocket.OPEN) {
     room.sender.send(messageStr);
   }
-  
+
   if (room.receiver && room.receiver !== excludeSocket && room.receiver.readyState === WebSocket.OPEN) {
     room.receiver.send(messageStr);
   }
@@ -28,7 +28,7 @@ function broadcastToRoom(roomId: string, message: any, excludeSocket?: WebSocket
 function cleanupSocket(socket: WebSocket, roomId: string) {
   const room = rooms.get(roomId);
   if (!room) return;
-  
+
   if (room.sender === socket) {
     room.sender = undefined;
     room.senderReady = false;
@@ -38,7 +38,7 @@ function cleanupSocket(socket: WebSocket, roomId: string) {
     room.receiverReady = false;
     broadcastToRoom(roomId, { type: 'peer-left', peerRole: 'receiver' });
   }
-  
+
   // Clean up empty rooms
   if (!room.sender && !room.receiver) {
     rooms.delete(roomId);
@@ -67,16 +67,16 @@ serve((req) => {
         case 'join-room':
           const { roomId, role } = message;
           currentRoomId = roomId;
-          
+
           if (!rooms.has(roomId)) {
             rooms.set(roomId, {
               senderReady: false,
               receiverReady: false
             });
           }
-          
+
           const room = rooms.get(roomId)!;
-          
+
           if (role === 'sender') {
             if (room.sender) {
               socket.send(JSON.stringify({ type: 'error', message: 'Room already has a sender' }));
@@ -84,7 +84,7 @@ serve((req) => {
             }
             room.sender = socket;
             room.senderReady = true;
-            
+
             // Notify receiver if they're already there
             if (room.receiver) {
               broadcastToRoom(roomId, { type: 'peer-joined', peerRole: 'sender' });
@@ -96,13 +96,13 @@ serve((req) => {
             }
             room.receiver = socket;
             room.receiverReady = true;
-            
+
             // Notify sender if they're already there
             if (room.sender) {
               broadcastToRoom(roomId, { type: 'peer-joined', peerRole: 'receiver' });
             }
           }
-          
+
           console.log(`${role} joined room ${roomId}`);
           break;
 

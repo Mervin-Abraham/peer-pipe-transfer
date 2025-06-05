@@ -6,7 +6,7 @@ export class MockDataChannel extends EventTarget {
   public onopen: ((event: Event) => void) | null = null;
   public onclose: ((event: Event) => void) | null = null;
   public onmessage: ((event: MessageEvent) => void) | null = null;
-  
+
   // Static registry to simulate cross-peer communication
   private static instances: MockDataChannel[] = [];
   private peerId: string;
@@ -22,7 +22,7 @@ export class MockDataChannel extends EventTarget {
       throw new Error('RTCDataChannel.readyState is not \'open\'');
     }
     console.log(`MockDataChannel (${this.peerId}): Sending data`, data);
-    
+
     // Send to OTHER peer instances, not self
     setTimeout(() => {
       MockDataChannel.instances.forEach(instance => {
@@ -37,14 +37,14 @@ export class MockDataChannel extends EventTarget {
   close() {
     this.readyState = 'closed';
     console.log(`MockDataChannel (${this.peerId}): Closing connection`);
-    
+
     // Notify other peers about disconnection
     this.notifyDisconnection();
-    
+
     if (this.onclose) {
       this.onclose(new Event('close'));
     }
-    
+
     // Remove from registry
     const index = MockDataChannel.instances.indexOf(this);
     if (index > -1) {
@@ -58,7 +58,7 @@ export class MockDataChannel extends EventTarget {
       type: 'peer-disconnected',
       peerId: this.peerId
     });
-    
+
     MockDataChannel.instances.forEach(instance => {
       if (instance !== this && instance.onmessage && instance.readyState === 'open') {
         console.log(`MockDataChannel: Notifying ${instance.peerId} about ${this.peerId} disconnection`);

@@ -98,14 +98,13 @@ export const FileSelector = ({ onFilesSelected, onGenerateLink }: FileSelectorPr
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div 
-          className={`border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${
-            isDragOver 
-              ? 'border-blue-400 bg-blue-50' 
-              : selectedFiles.length > 0 
-                ? 'border-green-300 bg-green-50' 
+        <div
+          className={`border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${isDragOver
+              ? 'border-blue-400 bg-blue-50'
+              : selectedFiles.length > 0
+                ? 'border-green-300 bg-green-50'
                 : 'border-gray-300 bg-gray-50 hover:border-gray-400 hover:bg-gray-100'
-          }`}
+            }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -118,20 +117,19 @@ export const FileSelector = ({ onFilesSelected, onGenerateLink }: FileSelectorPr
             multiple
           />
           <label htmlFor="file-input-selector" className="cursor-pointer">
-            <Upload className={`h-16 w-16 mx-auto mb-4 ${
-              selectedFiles.length > 0 ? 'text-green-500' : 'text-gray-400'
-            }`} />
+            <Upload className={`h-16 w-16 mx-auto mb-4 ${selectedFiles.length > 0 ? 'text-green-500' : 'text-gray-400'
+              }`} />
             <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              {selectedFiles.length > 0 
-                ? `${selectedFiles.length} file(s) selected` 
-                : isDragOver 
-                  ? 'Drop files here' 
+              {selectedFiles.length > 0
+                ? `${selectedFiles.length} file(s) selected`
+                : isDragOver
+                  ? 'Drop files here'
                   : 'Choose files to share'
               }
             </h3>
             <p className="text-gray-500">
-              {isDragOver 
-                ? 'Release to select files' 
+              {isDragOver
+                ? 'Release to select files'
                 : 'Click to browse or drag and drop files here'
               }
             </p>
@@ -165,7 +163,7 @@ export const FileSelector = ({ onFilesSelected, onGenerateLink }: FileSelectorPr
           </div>
         )}
 
-        <Button 
+        <Button
           onClick={handleGenerateLink}
           disabled={selectedFiles.length === 0}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3"
@@ -181,7 +179,7 @@ export const FileSelector = ({ onFilesSelected, onGenerateLink }: FileSelectorPr
             <div className="bg-white p-3 rounded-lg border border-gray-200 font-mono text-sm break-all">
               {shareLink}
             </div>
-            <Button 
+            <Button
               onClick={copyLinkToClipboard}
               className="w-full"
               variant="outline"

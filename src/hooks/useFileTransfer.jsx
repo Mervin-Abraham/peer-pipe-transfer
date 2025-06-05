@@ -15,14 +15,14 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles })
 
   const handleMessage = useCallback((message, channel) => {
     console.log('Received message:', message);
-    
+
     if (message.type === 'file-list') {
       console.log('Received file list:', message.files);
       onIncomingFiles(message.files || []);
     } else if (message.type === 'file-request') {
       console.log('File request received for:', message.fileIds);
       // Send requested files
-      const requestedFiles = pendingFilesRef.current.filter(f => 
+      const requestedFiles = pendingFilesRef.current.filter(f =>
         message.fileIds?.includes(f.id)
       );
       requestedFiles.forEach(fileData => {
@@ -41,7 +41,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles })
       if (fileTransferRef.current) {
         const blob = new Blob(fileTransferRef.current.chunks);
         const file = new File([blob], fileTransferRef.current.fileName);
-        
+
         // Auto-download the file
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -49,7 +49,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles })
         a.download = fileTransferRef.current.fileName;
         a.click();
         URL.revokeObjectURL(url);
-        
+
         onFileReceived([file]);
         fileTransferRef.current = null;
       }
@@ -60,7 +60,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles })
     if (fileTransferRef.current) {
       fileTransferRef.current.chunks.push(data);
       fileTransferRef.current.receivedSize += data.byteLength;
-      
+
       const progress = (fileTransferRef.current.receivedSize / fileTransferRef.current.fileSize) * 100;
       onProgress(Math.round(progress));
     }
@@ -72,7 +72,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles })
     }
 
     const chunkSize = 16384; // 16KB chunks
-    
+
     // Send file metadata
     channel.send(JSON.stringify({
       type: 'file-start',
@@ -91,10 +91,10 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles })
         if (event.target?.result && channel.readyState === 'open') {
           channel.send(event.target.result);
           offset += chunkSize;
-          
+
           const progress = Math.min((offset / file.size) * 100, 100);
           onProgress(Math.round(progress));
-          
+
           if (offset < file.size) {
             setTimeout(sendChunk, 10);
           } else {
@@ -116,7 +116,7 @@ export const useFileTransfer = ({ onFileReceived, onProgress, onIncomingFiles })
       id: Math.random().toString(36).substr(2, 9),
       file
     }));
-    
+
     console.log('Files set for sharing:', pendingFilesRef.current.length);
   }, []);
 

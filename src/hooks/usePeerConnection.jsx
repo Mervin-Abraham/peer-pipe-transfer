@@ -54,7 +54,7 @@ export const usePeerConnection = ({
   const setFilesForSharing = useCallback((files) => {
     setSelectedFiles(files);
     setFilesForSharingInternal(files);
-    
+
     // Start waiting for connections when files are ready
     if (!isWaitingForConnection && !connectionRef.current) {
       waitForConnection().then(() => {
@@ -64,7 +64,7 @@ export const usePeerConnection = ({
         setRoomId(generatedRoomId);
       });
     }
-    
+
     // If we're already connected, send the file list immediately
     if (connectionRef.current?.dataChannel?.readyState === 'open') {
       sendFileList(connectionRef.current.dataChannel);

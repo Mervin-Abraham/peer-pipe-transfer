@@ -68,24 +68,24 @@ export const useSimplePeerConnection = ({
   const setFilesForSharing = useCallback((files) => {
     setSelectedFiles(files);
     setFilesForSharingInternal(files);
-    
+
     // Start waiting for connections when files are ready
     if (!isWaitingForConnection && !connectionRef.current) {
       setIsWaitingForConnection(true);
       setConnectionStatus('Waiting for connection');
-      
+
       // Create mock connection immediately for demo
       setTimeout(() => {
         connectionRef.current = createMockConnection();
         setConnectionStatus('Connected');
         setIsWaitingForConnection(false);
         onConnectionChange(true);
-        
+
         // Send file list immediately
         sendFileList(connectionRef.current.dataChannel);
       }, 1000);
     }
-    
+
     // If we're already connected, send the file list immediately
     if (connectionRef.current?.dataChannel?.readyState === 'open') {
       sendFileList(connectionRef.current.dataChannel);
@@ -95,16 +95,16 @@ export const useSimplePeerConnection = ({
   const connect = useCallback(async (peerId) => {
     setIsConnecting(true);
     setConnectionStatus('Connecting');
-    
+
     try {
       // Simulate connection delay
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       connectionRef.current = createMockConnection();
       setConnectionStatus('Connected');
       setIsConnecting(false);
       onConnectionChange(true);
-      
+
       console.log('Mock connection established to:', peerId);
     } catch (error) {
       console.error('Mock connection failed:', error);

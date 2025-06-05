@@ -19,15 +19,15 @@ export const FileTransfer = ({ connectToPeerId }) => {
   const [mode, setMode] = useState(connectToPeerId ? 'receiver' : 'initial');
   const [wasDisconnected, setWasDisconnected] = useState(false);
   const { toast } = useToast();
-  
-  const { 
-    localPeerId, 
-    connect, 
+
+  const {
+    localPeerId,
+    connect,
     setFilesForSharing,
     requestFiles,
     generateShareLink,
     isConnecting,
-    connectionStatus 
+    connectionStatus
   } = usePeerConnection({
     onFileReceived: (files) => {
       toast({
@@ -42,18 +42,18 @@ export const FileTransfer = ({ connectToPeerId }) => {
     onConnectionChange: (connected) => {
       const wasConnected = isConnected;
       setIsConnected(connected);
-      
+
       if (wasConnected && !connected) {
         setWasDisconnected(true);
         setAvailableFiles([]);
         setTransferProgress(0);
-        
+
         toast({
           title: "Connection lost",
           description: "The connection has been lost",
           variant: "destructive",
         });
-        
+
         if (mode === 'receiver') {
           setTimeout(() => {
             setMode('initial');
@@ -111,7 +111,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
 
   const handleFilesSelected = useCallback((files) => {
     console.log('Files selected for sharing:', files.length);
-    
+
     // Only allow file selection if not already in receiver mode
     if (mode !== 'receiver') {
       setFilesForSharing(files);
@@ -192,7 +192,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
                   {localPeerId || 'Generating...'}
                 </code>
               </div>
-              
+
               <div className="flex flex-wrap gap-2">
                 {mode === 'sender' && (
                   <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
@@ -230,7 +230,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
                   disabled={isConnecting || isConnected}
                   className="bg-white/80 border-gray-200 focus:border-blue-500"
                 />
-                <Button 
+                <Button
                   onClick={handleConnect}
                   disabled={!peerId.trim() || isConnecting || isConnected}
                   className="w-full bg-blue-600 hover:bg-blue-700"
@@ -330,7 +330,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
         <div className="space-y-6">
           {/* Only show file selector if not in receiver mode */}
           {mode !== 'receiver' && !wasDisconnected && (
-            <FileSelector 
+            <FileSelector
               onFilesSelected={handleFilesSelected}
               onGenerateLink={generateShareLink}
               disabled={mode === 'receiver'}
@@ -338,7 +338,7 @@ export const FileTransfer = ({ connectToPeerId }) => {
           )}
 
           {mode === 'receiver' && !wasDisconnected && (
-            <FileReceiver 
+            <FileReceiver
               availableFiles={availableFiles}
               onDownloadSelected={handleDownloadSelected}
               isConnected={isConnected}

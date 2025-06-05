@@ -124,7 +124,7 @@ export const FileReceiver = ({ availableFiles, onDownloadSelected, isConnected }
           ))}
         </div>
 
-        <Button 
+        <Button
           onClick={handleDownload}
           disabled={selectedFileIds.length === 0}
           className="w-full"
